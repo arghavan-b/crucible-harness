@@ -57,6 +57,55 @@ def replay(
 
 
 @app.command()
+def intake(
+    repo_dir: str = typer.Argument(..., help="Path to a local repo to analyze."),
+    paper: str | None = typer.Option(None, "--paper", help="Path to a paper PDF to extract claims from."),
+    repo_uri: str | None = typer.Option(None, "--repo-uri", help="Canonical repo URI (defaults to local path)."),
+    out: str | None = typer.Option(None, "--out", help="Write the drafted ExperimentSpec JSON here."),
+) -> None:
+    """Draft an ExperimentSpec from a repo, optionally extracting claims from a paper (design §6.1).
+
+    With --paper this parses the PDF (text/tables/figures) and uses an LLM
+    (ANTHROPIC_API_KEY or OPENAI_API_KEY) to extract claims and baselines. Without
+    it, a shallow repo-only spec is drafted offline.
+    """
+    from crucible.intake import Intake
+
+    uri = repo_uri or f"local://{repo_dir}"
+
+    if paper:
+        from crucible.intake import default_client
+
+        try:
+            client = default_client()
+        except RuntimeError as exc:
+            typer.echo(f"intake: {exc}")
+            raise typer.Exit(code=1) from None
+        spec, extraction, _analysis = Intake(llm=client).from_paper(paper, repo_uri=uri, root=repo_dir)
+        typer.echo(f"title: {extraction.title or '(none)'}")
+        typer.echo(f"extracted {len(extraction.claims)} claim(s), {len(extraction.baselines)} baseline(s)\n")
+        for c in extraction.claims:
+            typer.echo(f"  claim {c.claim_id}: {c.comparison}  "
+                       f"(reported {c.reported_value}, baseline {c.baseline_value})")
+            typer.echo(f"     source: {c.source.location}   confidence: {c.confidence}")
+    else:
+        spec, _analysis = Intake().prepare(uri, root=repo_dir)
+        typer.echo("no paper given — drafted a shallow repo-only spec (claims need a paper).\n")
+
+    typer.echo(f"\nexperiment_id: {spec.experiment_id}")
+    typer.echo(f"hypothesis:    {spec.hypothesis.type.value} — {spec.hypothesis.statement}")
+    for claim in spec.claims_under_test:
+        typer.echo(f"claim:         {claim.comparison}  reported={claim.reported_values} tol={claim.tolerance.value}")
+    for pc in spec.positive_controls:
+        typer.echo(f"control:       {pc.description} (expect {pc.expected} ± {pc.tolerance.value})")
+
+    if out:
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(spec.model_dump_json(indent=2))
+        typer.echo(f"\nwrote spec -> {out}")
+
+
+@app.command()
 def plan(repo_dir: str = typer.Argument(..., help="Path to a local repo to analyze and plan.")) -> None:
     """Intake -> plan -> validate for a local repo, printing the plan and gate result."""
     from crucible.intake import Intake

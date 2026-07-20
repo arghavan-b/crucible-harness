@@ -27,6 +27,13 @@ backends = [
     "boto3>=1.34",
     "anthropic>=0.34",
 ]
+# Paper-driven intake: PDF/table/figure parsing + LLM extraction.
+intake = [
+    "pdfplumber>=0.11",
+    "pymupdf>=1.24",
+    "anthropic>=0.34",
+    "openai>=1.40",
+]
 
 [project.scripts]
 crucible = "crucible.cli.main:app"
