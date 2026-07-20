@@ -59,8 +59,9 @@ def test_bool_is_not_int() -> None:
 
 
 def test_unknown_arg() -> None:
+    # An unknown/extra arg is a WARNING (ignored at runtime), not a blocking error.
     plan = _plan(_step("exit_code_zero", {"surprise": 1}))
-    v = [x for x in validate_plan(plan) if x.gate == "verifier_args"]
+    v = [x for x in validate_plan(plan) if x.gate == "verifier_args_unknown"]
     assert v and "unknown arg 'surprise'" in v[0].message
 
 

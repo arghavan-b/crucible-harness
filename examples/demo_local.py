@@ -12,6 +12,9 @@ from __future__ import annotations
 import os
 import tempfile
 
+import json
+
+from crucible.adjudicator import Observations, adjudicate
 from crucible.certificate import build_certificate, replay_certificate
 from crucible.certificate.manifest import read_source
 from crucible.envmgr.manager import LocalEnvironmentManager
@@ -125,13 +128,15 @@ def certify() -> ReproducibilityCertificate:
     executor, plan = build_executor(db_path=os.path.join(tempfile.mkdtemp(), "demo.sqlite"))
     source_files = read_source(executor._env.working_dir)  # capture inputs BEFORE running
     result: RunResult = executor.execute(plan)
-    verdict = Verdict(
-        experiment_id=plan.experiment_id,
-        claim_id="c1",
-        status=VerdictStatus.SUCCESS if result.all_succeeded else VerdictStatus.EXECUTION_FAILURE,
-        confidence=1.0 if result.all_succeeded else 0.0,
-        reason=None if result.all_succeeded else f"stopped at {result.stopped_at}",
+
+    # Extract the observed metric from the produced artifact and adjudicate.
+    predictions_path = os.path.join(executor._env.working_dir, "predictions.json")
+    count = len(json.load(open(predictions_path))) if os.path.exists(predictions_path) else 0
+    observations = Observations(
+        claim_series={"prediction_count": [float(count)]},
+        control_values={"pc1": float(count)},
     )
+    verdict = adjudicate(build_demo_spec(), result, "c1", observations)
     return build_certificate(
         spec=build_demo_spec(),
         plan=plan,
@@ -160,6 +165,8 @@ def main() -> None:
     # Reproducibility: certify this run, then replay it from the certificate.
     print("\n=== REPRODUCIBILITY ===")
     cert = certify()
+    print(f"verdict:     {cert.verdict.status.value} "
+          f"(confidence {cert.verdict.confidence:.2f}) — {cert.verdict.evidence.result.conclusion}")
     print(f"certificate: {len(cert.source_files)} source file(s), "
           f"{len(cert.artifact_manifest)} artifact(s) hashed")
     report = replay_certificate(cert)

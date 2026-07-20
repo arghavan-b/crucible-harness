@@ -21,7 +21,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from crucible.schemas import ExecutionPlan, ExperimentSpec, RollbackKind, StepType
+from crucible.schemas import (
+    ExecutionPlan,
+    ExperimentSpec,
+    RollbackKind,
+    Severity,
+    StepType,
+    ValidationFinding,
+    ValidationRecord,
+    Waiver,
+)
 from crucible.validation.predicates import (
     KNOWN_PREDICATES,
     Predicate,
@@ -44,16 +53,29 @@ class Violation:
     gate: str
     message: str
     step_id: str | None = None
+    severity: Severity = Severity.ERROR
 
     def __str__(self) -> str:
         loc = f" [{self.step_id}]" if self.step_id else ""
-        return f"{self.gate}{loc}: {self.message}"
+        return f"{self.severity.value}:{self.gate}{loc}: {self.message}"
+
+
+# Per-gate severity. Anything not listed defaults to ERROR (blocks execution).
+SEVERITY_BY_GATE: dict[str, Severity] = {
+    "smoke_before_full": Severity.WARNING,   # skipping smoke is wasteful, still runnable
+    "budget": Severity.WARNING,              # runtime enforces the budget anyway
+    "verifier_args_unknown": Severity.WARNING,  # extra arg is ignored at runtime
+}
 
 
 class PlanValidationError(Exception):
-    def __init__(self, violations: list[Violation]) -> None:
-        self.violations = violations
-        super().__init__("plan failed validation:\n  " + "\n  ".join(map(str, violations)))
+    def __init__(self, record: ValidationRecord) -> None:
+        self.record = record
+        blocking = record.blocking()
+        super().__init__(
+            "plan failed validation:\n  "
+            + "\n  ".join(f"{f.gate} [{f.step_id}]: {f.message}" for f in blocking)
+        )
 
 
 # --- Gate 4 configuration -----------------------------------------------------
@@ -141,7 +163,8 @@ def _gate_verifier_args(plan: ExecutionPlan) -> list[Violation]:
             )
             continue
         for err in catalog.validate_args(step.verifier, dict(step.verifier_args)):
-            out.append(Violation("verifier_args", f"{step.verifier}: {err}", step.step_id))
+            gate = "verifier_args_unknown" if err.startswith("unknown arg") else "verifier_args"
+            out.append(Violation(gate, f"{step.verifier}: {err}", step.step_id))
     return out
 
 
@@ -311,7 +334,8 @@ def validate_plan(
     network_allowlist: frozenset[str] = DEFAULT_NETWORK_ALLOWLIST,
     initial_facts: frozenset[Predicate] = DEFAULT_INITIAL_FACTS,
 ) -> list[Violation]:
-    """Return an empty list iff the plan is executable. Never raises."""
+    """Return the raw findings (empty = clean). Never raises. Each Violation's
+    severity is set from SEVERITY_BY_GATE."""
     violations: list[Violation] = []
     violations += _gate_ontology_and_verifiers(plan)
     violations += _gate_verifier_args(plan)
@@ -320,15 +344,53 @@ def validate_plan(
         violations += _gate_smoke_before_full(plan, spec)
         violations += _gate_control_before_eval(plan, spec)
     violations += _gate_static_safety(plan, spec, network_allowlist)
+    for v in violations:
+        v.severity = SEVERITY_BY_GATE.get(v.gate, Severity.ERROR)
     return violations
+
+
+def validate(
+    plan: ExecutionPlan,
+    spec: ExperimentSpec | None = None,
+    waivers: list[Waiver] | None = None,
+    network_allowlist: frozenset[str] = DEFAULT_NETWORK_ALLOWLIST,
+    initial_facts: frozenset[Predicate] = DEFAULT_INITIAL_FACTS,
+) -> ValidationRecord:
+    """Full validation: findings + waivers applied + a pass/fail decision.
+
+    Waivers default to the spec's `validation_waivers`. A plan passes iff it has
+    no unwaived ERROR findings. The returned record is meant to be recorded in
+    the trace and certificate (design §4.2 provenance)."""
+    if waivers is None:
+        waivers = spec.validation_waivers if spec is not None else []
+
+    findings: list[ValidationFinding] = []
+    for v in validate_plan(plan, spec, network_allowlist, initial_facts):
+        waiver = next((w for w in waivers if w.matches(v.gate, v.message, v.step_id)), None)
+        findings.append(
+            ValidationFinding(
+                gate=v.gate,
+                message=v.message,
+                severity=v.severity,
+                step_id=v.step_id,
+                waived=waiver is not None,
+                waiver_reason=waiver.reason if waiver else None,
+            )
+        )
+    passed = not any(
+        f.severity is Severity.ERROR and not f.waived for f in findings
+    )
+    return ValidationRecord(passed=passed, findings=findings)
 
 
 def validate_or_raise(
     plan: ExecutionPlan,
     spec: ExperimentSpec | None = None,
+    waivers: list[Waiver] | None = None,
     network_allowlist: frozenset[str] = DEFAULT_NETWORK_ALLOWLIST,
     initial_facts: frozenset[Predicate] = DEFAULT_INITIAL_FACTS,
-) -> None:
-    violations = validate_plan(plan, spec, network_allowlist, initial_facts)
-    if violations:
-        raise PlanValidationError(violations)
+) -> ValidationRecord:
+    record = validate(plan, spec, waivers, network_allowlist, initial_facts)
+    if not record.passed:
+        raise PlanValidationError(record)
+    return record

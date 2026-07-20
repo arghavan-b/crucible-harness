@@ -32,6 +32,12 @@ from .spec import (
     Source,
     Tolerance,
 )
+from .validation import (
+    Severity,
+    ValidationFinding,
+    ValidationRecord,
+    Waiver,
+)
 from .verdict import (
     Evidence,
     ExecutionIntegrity,
@@ -69,6 +75,7 @@ __all__ = [
     "RollbackKind",
     "RuleMode",
     "ScalePolicy",
+    "Severity",
     "Source",
     "Step",
     "StepBudget",
@@ -76,6 +83,9 @@ __all__ = [
     "StepType",
     "Tolerance",
     "ToleranceType",
+    "ValidationFinding",
+    "ValidationRecord",
     "Verdict",
     "VerdictStatus",
+    "Waiver",
 ]

@@ -14,6 +14,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from .enums import HypothesisType, ToleranceType
+from .validation import Waiver
 
 
 class Tolerance(BaseModel):
@@ -85,6 +86,10 @@ class ExperimentSpec(BaseModel):
     scale_policy: ScalePolicy = Field(default_factory=ScalePolicy)
     environment_constraints: EnvironmentConstraints = Field(
         default_factory=EnvironmentConstraints
+    )
+    validation_waivers: list[Waiver] = Field(
+        default_factory=list,
+        description="Per-experiment overrides of specific validation findings (design §4.2).",
     )
 
     def has_positive_control(self) -> bool:

@@ -53,6 +53,7 @@ def build_certificate(
         pinned_inputs=pinned,
         trace_id=run_result.trace_id,
         verdict=verdict,
+        validation=run_result.validation,
         artifact_manifest=produced,
         artifact_contents=read_paths(working_dir, frozenset(produced)),
         nondeterminism_policy=policy or NondeterminismPolicy(),

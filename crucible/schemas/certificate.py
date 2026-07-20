@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from .plan import ExecutionPlan
 from .policy import NondeterminismPolicy
 from .spec import ExperimentSpec
+from .validation import ValidationRecord
 from .verdict import Verdict
 
 
@@ -30,6 +31,9 @@ class ReproducibilityCertificate(BaseModel):
     pinned_inputs: PinnedInputs = Field(default_factory=PinnedInputs)
     trace_id: str
     verdict: Verdict
+    validation: ValidationRecord | None = Field(
+        default=None, description="What the plan-validation gates checked, failed, and waived."
+    )
     artifact_manifest: dict[str, str] = Field(
         default_factory=dict,
         description="Produced artifacts: relative path -> sha256. Replay checks byte-comparability against this.",

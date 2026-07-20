@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from crucible.envmgr.manager import Environment, EnvironmentManager
 from crucible.runners.base import CommandResult, Runner
-from crucible.schemas import ExecutionPlan, ExperimentSpec, Step, StepState
+from crucible.schemas import ExecutionPlan, ExperimentSpec, Step, StepState, ValidationRecord
 from crucible.trace.recorder import TraceRecorder
 from crucible.validation.gates import DEFAULT_INITIAL_FACTS, validate_or_raise
 from crucible.validation.predicates import Predicate
@@ -44,6 +44,7 @@ class RunResult:
     trace_id: str
     step_results: list[StepResult] = field(default_factory=list)
     stopped_at: str | None = None  # step_id of the deepest failure, if any
+    validation: ValidationRecord | None = None
 
     @property
     def all_succeeded(self) -> bool:
@@ -80,14 +81,18 @@ class TransactionalExecutor:
         self._env = env
 
         # Gate the plan before executing any step (design §4.2). The planner is
-        # not trusted: an invalid plan never runs.
+        # not trusted: an invalid plan (unwaived ERROR) never runs. Warnings and
+        # waived findings are recorded but do not block.
+        record: ValidationRecord | None = None
         if validate:
-            validate_or_raise(plan, spec, initial_facts=self._initial_facts(env))
+            record = validate_or_raise(plan, spec, initial_facts=self._initial_facts(env))
 
         trace_id = self.recorder.start(plan.experiment_id)
         self.recorder.record(trace_id, "run_started", {"experiment_id": plan.experiment_id})
+        if record is not None:
+            self.recorder.record(trace_id, "validation", record.model_dump(mode="json"))
 
-        result = RunResult(experiment_id=plan.experiment_id, trace_id=trace_id)
+        result = RunResult(experiment_id=plan.experiment_id, trace_id=trace_id, validation=record)
         for step in plan.steps:
             step_result = self._run_step(step, env, trace_id)
             result.step_results.append(step_result)
