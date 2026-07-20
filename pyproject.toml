@@ -1,0 +1,52 @@
+[project]
+name = "crucible-harness"
+version = "0.0.1"
+description = "An execution-reliability layer for autonomous computational science: transactional execution, per-step verification, and calibrated verdicts."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Arghavan Bahadori" }]
+dependencies = [
+    "pydantic>=2.7",
+    "typer>=0.12",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.10",
+    "ruff>=0.5",
+]
+# Backends wired in as they land (Stage 0 §15):
+#   docker SDK, uv (subprocess), Modal/RunPod (behind runners.Runner),
+#   psycopg (Postgres), boto3 (S3), anthropic/openai (LLM).
+backends = [
+    "docker>=7.1",
+    "psycopg[binary]>=3.2",
+    "boto3>=1.34",
+    "anthropic>=0.34",
+]
+
+[project.scripts]
+crucible = "crucible.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Project is named "crucible-harness" but the import package is "crucible".
+# Without this, Hatchling can't guess which directory to ship.
+packages = ["crucible"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
