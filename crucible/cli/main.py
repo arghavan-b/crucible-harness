@@ -81,13 +81,21 @@ def intake(
         except RuntimeError as exc:
             typer.echo(f"intake: {exc}")
             raise typer.Exit(code=1) from None
+        from crucible.intake import ground_claims
+
         spec, extraction, _analysis = Intake(llm=client).from_paper(paper, repo_uri=uri, root=repo_dir)
         typer.echo(f"title: {extraction.title or '(none)'}")
         typer.echo(f"extracted {len(extraction.claims)} claim(s), {len(extraction.baselines)} baseline(s)\n")
+        bindings = {b.claim_id: b for b in ground_claims(extraction.claims, repo_dir, llm=client)}
         for c in extraction.claims:
             typer.echo(f"  claim {c.claim_id}: {c.comparison}  "
                        f"(reported {c.reported_value}, baseline {c.baseline_value})")
             typer.echo(f"     source: {c.source.location}   confidence: {c.confidence}")
+            b = bindings.get(c.claim_id)
+            if b:
+                typer.echo(f"     reproduce: {b.run_command}   (grounding confidence {b.confidence})")
+                if b.config_files:
+                    typer.echo(f"     configs:   {', '.join(b.config_files)}")
     else:
         spec, _analysis = Intake().prepare(uri, root=repo_dir)
         typer.echo("no paper given — drafted a shallow repo-only spec (claims need a paper).\n")

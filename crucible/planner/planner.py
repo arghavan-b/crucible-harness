@@ -47,12 +47,26 @@ def _q(path: str) -> str:
 
 
 class TemplatePlanner:
-    """Assemble a standard reproduction plan from repo analysis."""
+    """Assemble a standard reproduction plan from repo analysis.
 
-    def plan(self, spec: ExperimentSpec, analysis: RepoAnalysis) -> ExecutionPlan:
-        if not analysis.entry_points:
+    When `bindings` are supplied (from claim->repo grounding), the primary
+    binding's concrete commands are used for the full run and the positive
+    control instead of a generic `python <entry>`.
+    """
+
+    def plan(
+        self, spec: ExperimentSpec, analysis: RepoAnalysis, bindings=None
+    ) -> ExecutionPlan:
+        binding = bindings[0] if bindings else None
+        entry = (binding.entry_point if binding and binding.entry_point else None) or (
+            analysis.entry_points[0] if analysis.entry_points else None
+        )
+        if entry is None:
             raise PlannerError("no entry point detected; cannot plan a run")
-        entry = analysis.entry_points[0]
+        run_cmd = (binding.run_command if binding and binding.run_command else None) or f"python {entry}"
+        control_cmd = (
+            binding.baseline_command if binding and binding.baseline_command else None
+        ) or f"python {entry}"
         manifest = analysis.dependency_manifests[0] if analysis.dependency_manifests else None
         has_deps = bool(manifest and analysis.top_level_packages)
 
@@ -85,7 +99,7 @@ class TemplatePlanner:
             step_id="smoke_run",
             type=StepType.SMOKE_RUN,
             preconditions=list(run_pre),
-            action=Action(kind="shell", command=f"python {entry} --smoke || python {entry}"),
+            action=Action(kind="shell", command=f"{run_cmd} --smoke || {run_cmd}"),
             postconditions=[],
             verifier="exit_code_zero",
         ))
@@ -93,7 +107,7 @@ class TemplatePlanner:
             step_id="positive_control_run",
             type=StepType.POSITIVE_CONTROL_RUN,
             preconditions=list(run_pre),
-            action=Action(kind="shell", command=f"python {entry}"),
+            action=Action(kind="shell", command=control_cmd),
             postconditions=[],
             verifier="exit_code_zero",
         ))
@@ -101,7 +115,7 @@ class TemplatePlanner:
             step_id="full_run",
             type=StepType.FULL_RUN,
             preconditions=list(run_pre),
-            action=Action(kind="shell", command=f"python {entry}"),
+            action=Action(kind="shell", command=run_cmd),
             postconditions=[_q(_OUTPUT)],
             verifier="exit_code_zero",
         ))
