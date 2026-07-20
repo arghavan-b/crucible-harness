@@ -57,6 +57,30 @@ def replay(
 
 
 @app.command()
+def plan(repo_dir: str = typer.Argument(..., help="Path to a local repo to analyze and plan.")) -> None:
+    """Intake -> plan -> validate for a local repo, printing the plan and gate result."""
+    from crucible.intake import Intake
+    from crucible.planner import PlannerError, TemplatePlanner
+    from crucible.validation import validate
+
+    spec, analysis = Intake().prepare(f"local://{repo_dir}", root=repo_dir)
+    typer.echo(f"entry points: {analysis.entry_points or '(none detected)'}")
+    typer.echo(f"manifests:    {analysis.dependency_manifests or '(none)'}")
+    typer.echo(f"packages:     {analysis.top_level_packages or '(none)'}")
+    try:
+        execution_plan = TemplatePlanner().plan(spec, analysis)
+    except PlannerError as exc:
+        typer.echo(f"planner error: {exc}")
+        raise typer.Exit(code=1) from None
+    typer.echo("\nplan:")
+    for step in execution_plan.steps:
+        typer.echo(f"  {step.step_id:24s} {step.type.value:22s} verifier={step.verifier}")
+    record = validate(execution_plan, spec)
+    typer.echo(f"\nvalidation: {record.summary()}")
+    raise typer.Exit(code=0 if record.passed else 1)
+
+
+@app.command()
 def report(experiment_id: str = typer.Argument(...)) -> None:
     """Print the verdict object and evidence chain for an experiment."""
     raise typer.Exit(code=_not_implemented("report"))
