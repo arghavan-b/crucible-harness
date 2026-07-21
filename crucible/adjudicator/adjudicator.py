@@ -2,10 +2,11 @@
 
 Per-claim decision procedure (§8.1), evaluated strictly in order:
 
-  1. Positive control passed?  no  -> INCONCLUSIVE(control_failed). Stop.
-     (No positive control at all -> INCONCLUSIVE(no_positive_control).)
-  2. All steps SUCCEEDED with gating verifiers passed?
+  1. All steps SUCCEEDED with gating verifiers passed?
      no -> EXECUTION_FAILURE(deepest cause). Stop.
+     (Checked first: a run that stopped early never measured its control.)
+  2. Positive control passed?  no -> INCONCLUSIVE(control_failed). Stop.
+     (No positive control at all -> INCONCLUSIVE(no_positive_control).)
   3. Did any repair touch the scientific path (model/data/eval)?
      yes -> INCONCLUSIVE(scientific_path_modified) unless a human approved it.
      (Stage 0 runs no repairs, so this is structurally present but inert.)
@@ -104,7 +105,20 @@ def adjudicate(
     observations = observations or Observations()
     ev = Evidence()
 
-    # --- Step 1: positive control -------------------------------------------
+    # --- Step 1: execution integrity ----------------------------------------
+    # Checked first: a run that did not complete never measured its positive
+    # control, so an incomplete execution dominates (design §8.1 lists control
+    # first, but assumes the control step actually ran; our transactional
+    # executor stops at the first failure).
+    repairs = _collect_repairs(run)
+    ev.execution_integrity = ExecutionIntegrity(
+        all_steps_verified=run.all_succeeded, repairs_applied=[r for r, _sci in repairs]
+    )
+    if not run.all_succeeded:
+        cause = _deepest_failure(run)
+        return _mk(spec, run, claim_id, VerdictStatus.EXECUTION_FAILURE, 1.0, ev, cause)
+
+    # --- Step 2: positive control -------------------------------------------
     if not spec.positive_controls:
         return _mk(spec, run, claim_id, VerdictStatus.INCONCLUSIVE, 0.9, ev, "no_positive_control")
     for pc in spec.positive_controls:
@@ -119,15 +133,6 @@ def adjudicate(
         )
         if not passed:
             return _mk(spec, run, claim_id, VerdictStatus.INCONCLUSIVE, 0.95, ev, "control_failed")
-
-    # --- Step 2: execution integrity ----------------------------------------
-    repairs = _collect_repairs(run)
-    ev.execution_integrity = ExecutionIntegrity(
-        all_steps_verified=run.all_succeeded, repairs_applied=[r for r, _sci in repairs]
-    )
-    if not run.all_succeeded:
-        cause = _deepest_failure(run)
-        return _mk(spec, run, claim_id, VerdictStatus.EXECUTION_FAILURE, 1.0, ev, cause)
 
     # --- Step 3: scientific-path repairs ------------------------------------
     scientific_repairs = [r for r, sci in repairs if sci]

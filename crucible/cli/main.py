@@ -18,12 +18,51 @@ app = typer.Typer(help="Execution-reliability layer for autonomous computational
 
 @app.command()
 def submit(
-    repo_uri: str = typer.Argument(..., help="Repo URL, or path to a spec with --spec."),
-    paper: str | None = typer.Option(None, help="Optional paper URI for intake."),
-    spec: str | None = typer.Option(None, help="Path to an ExperimentSpec JSON to skip intake."),
+    repo_dir: str = typer.Argument(..., help="Path to a local repo to run."),
+    paper: str | None = typer.Option(None, "--paper", help="Paper PDF to extract claims from (needs an LLM key)."),
+    repo_uri: str | None = typer.Option(None, "--repo-uri", help="Canonical repo URI for provenance."),
+    out: str | None = typer.Option(None, "--out", help="Write the reproducibility certificate JSON here."),
 ) -> None:
-    """Intake -> plan -> validate -> execute -> adjudicate -> verdict + certificate."""
-    raise typer.Exit(code=_not_implemented("submit"))
+    """Intake -> plan -> validate -> execute -> adjudicate -> verdict + certificate (design §22)."""
+    from crucible.pipeline import run_pipeline
+    from crucible.validation import PlanValidationError
+
+    llm = None
+    if paper:
+        from crucible.intake import default_client
+
+        try:
+            llm = default_client()
+        except RuntimeError as exc:
+            typer.echo(f"submit: {exc}")
+            raise typer.Exit(code=1) from None
+
+    try:
+        result = run_pipeline(repo_dir, repo_uri=repo_uri, paper=paper, llm=llm)
+    except PlanValidationError as exc:
+        typer.echo("plan rejected by validation:")
+        for f in exc.record.blocking():
+            typer.echo(f"  {f.gate} [{f.step_id}]: {f.message}")
+        raise typer.Exit(code=1) from None
+
+    typer.echo(f"experiment: {result.spec.experiment_id}")
+    typer.echo("steps:")
+    for r in result.run.step_results:
+        mark = "ok " if r.state.value == "SUCCEEDED" else "FAIL"
+        typer.echo(f"  [{mark}] {r.step_id}")
+    v = result.verdict
+    typer.echo(f"\nverdict: {v.status.value} (confidence {v.confidence:.2f})")
+    if v.reason:
+        typer.echo(f"  reason: {v.reason}")
+    if v.evidence.result and v.evidence.result.conclusion:
+        typer.echo(f"  {v.evidence.result.conclusion}")
+
+    out = out or f"{result.spec.experiment_id}.certificate.json"
+    from crucible.certificate import save_certificate
+
+    save_certificate(result.certificate, out)
+    typer.echo(f"\ncertificate -> {out}   (crucible replay {out})")
+    raise typer.Exit(code=0 if v.status.value in {"SUCCESS", "RESULT_NEGATIVE"} else 1)
 
 
 @app.command()
