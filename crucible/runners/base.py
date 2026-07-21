@@ -62,10 +62,12 @@ class LocalSubprocessRunner:
 
 
 class LocalDockerRunner:
-    """Executes commands inside a Docker container (design §6.3).
+    """Stateless: a fresh container per command (design §6.3).
 
     `image` selects the base image; `working_dir` is bind-mounted as the
-    container workspace. Requires the docker CLI on PATH.
+    container workspace. State does NOT persist across commands (each `docker
+    run` starts from the image), so this suits one-off commands, not multi-step
+    plans that install dependencies — use DockerExecRunner for those.
     """
 
     def run(
@@ -81,6 +83,32 @@ class LocalDockerRunner:
             proc = subprocess.run(
                 docker_cmd, shell=True, capture_output=True, text=True, timeout=timeout_s
             )
+        except subprocess.TimeoutExpired:
+            return CommandResult(
+                exit_code=124, stdout="", stderr=f"timed out after {timeout_s}s", timed_out=True
+            )
+        return CommandResult(exit_code=proc.returncode, stdout=proc.stdout, stderr=proc.stderr)
+
+
+class DockerExecRunner:
+    """Runs each step with `docker exec` in the environment's persistent
+    container, so installed dependencies persist across steps within a run. It
+    resolves the container from the working dir via the environment manager, so
+    the executor stays Runner-agnostic.
+    """
+
+    def __init__(self, envmgr) -> None:
+        self.envmgr = envmgr
+
+    def run(
+        self, command: str, working_dir: str, timeout_s: int = 1800, image: str | None = None
+    ) -> CommandResult:
+        cid = self.envmgr.container_for(working_dir)
+        if not cid:
+            raise RuntimeError(f"no container provisioned for {working_dir!r}")
+        cmd = ["docker", "exec", "-w", "/workspace", cid, "/bin/sh", "-lc", command]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
         except subprocess.TimeoutExpired:
             return CommandResult(
                 exit_code=124, stdout="", stderr=f"timed out after {timeout_s}s", timed_out=True

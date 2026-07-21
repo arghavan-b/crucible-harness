@@ -22,6 +22,9 @@ def submit(
     paper: str | None = typer.Option(None, "--paper", help="Paper PDF to extract claims from (needs an LLM key)."),
     repo_uri: str | None = typer.Option(None, "--repo-uri", help="Canonical repo URI for provenance."),
     out: str | None = typer.Option(None, "--out", help="Write the reproducibility certificate JSON here."),
+    isolation: str = typer.Option("subprocess", "--runner", help="subprocess | docker"),
+    image: str | None = typer.Option(None, "--image", help="Docker base image (with --runner docker)."),
+    gpus: str | None = typer.Option(None, "--gpus", help="GPU passthrough, e.g. 'all' (docker only)."),
 ) -> None:
     """Intake -> plan -> validate -> execute -> adjudicate -> verdict + certificate (design §22)."""
     from crucible.pipeline import run_pipeline
@@ -37,8 +40,17 @@ def submit(
             typer.echo(f"submit: {exc}")
             raise typer.Exit(code=1) from None
 
+    envmgr = runner = None
+    if isolation == "docker":
+        from crucible.envmgr.manager import DockerEnvironmentManager
+        from crucible.runners.base import DockerExecRunner
+
+        envmgr = DockerEnvironmentManager(base_image=image or "crucible/base:py3.12", gpus=gpus)
+        runner = DockerExecRunner(envmgr)
+
     try:
-        result = run_pipeline(repo_dir, repo_uri=repo_uri, paper=paper, llm=llm)
+        result = run_pipeline(repo_dir, repo_uri=repo_uri, paper=paper, llm=llm,
+                              envmgr=envmgr, runner=runner)
     except PlanValidationError as exc:
         typer.echo("plan rejected by validation:")
         for f in exc.record.blocking():
@@ -174,6 +186,33 @@ def plan(repo_dir: str = typer.Argument(..., help="Path to a local repo to analy
     record = validate(execution_plan, spec)
     typer.echo(f"\nvalidation: {record.summary()}")
     raise typer.Exit(code=0 if record.passed else 1)
+
+
+@app.command()
+def bench(
+    tasks_path: str | None = typer.Option(None, "--tasks", help="Adapted CORE-Bench JSON (default: bundled synthetic set)."),
+    n: int | None = typer.Option(None, "--n", help="Stratified-sample size (default: all tasks)."),
+) -> None:
+    """Run the harness-on/off comparison and print the false-verdict table (design §12.3)."""
+    from crucible.benchmarks import (
+        HarnessOnArm,
+        NaiveAgentArm,
+        load_tasks,
+        run_arm,
+        stratified_sample,
+    )
+    from crucible.eval import render_table, run_comparison
+
+    tasks = load_tasks(tasks_path)
+    if n:
+        tasks = stratified_sample(tasks, n)
+    typer.echo(f"running {len(tasks)} task(s): harness-on (crucible) vs harness-off (bare-agent)\n")
+    on = run_arm(HarnessOnArm(), tasks)
+    off = run_arm(NaiveAgentArm(), tasks)
+    rows = run_comparison(tasks, on, off)
+    typer.echo(render_table(rows))
+    overall = next(r for r in rows if r.stratum == "all")
+    typer.echo(f"\nThe one number — false-verdict delta (off - on): {overall.false_verdict_delta:.0%}")
 
 
 @app.command()

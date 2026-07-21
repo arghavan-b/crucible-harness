@@ -141,18 +141,26 @@ def run_pipeline(
     )
     runner = runner or LocalSubprocessRunner()
     executor = TransactionalExecutor(envmgr=envmgr, runner=runner, recorder=recorder, env=env)
-    run = executor.execute(plan, spec)  # validates; raises PlanValidationError if invalid
+    try:
+        run = executor.execute(plan, spec)  # validates; raises PlanValidationError if invalid
 
-    claim_id = spec.claims_under_test[0].claim_id if spec.claims_under_test else "c1"
-    observations = observe(spec, run, env.working_dir, set(source_files))
-    verdict = adjudicate(spec, run, claim_id, observations)
+        claim_id = spec.claims_under_test[0].claim_id if spec.claims_under_test else "c1"
+        observations = observe(spec, run, env.working_dir, set(source_files))
+        verdict = adjudicate(spec, run, claim_id, observations)
 
-    certificate = build_certificate(
-        spec=spec,
-        plan=plan,
-        run_result=run,
-        working_dir=env.working_dir,
-        source_files=source_files,
-        verdict=verdict,
-    )
-    return PipelineResult(spec=spec, plan=plan, run=run, verdict=verdict, certificate=certificate)
+        certificate = build_certificate(
+            spec=spec,
+            plan=plan,
+            run_result=run,
+            working_dir=env.working_dir,
+            source_files=source_files,
+            verdict=verdict,
+        )
+        return PipelineResult(spec=spec, plan=plan, run=run, verdict=verdict, certificate=certificate)
+    finally:
+        teardown = getattr(envmgr, "teardown", None)
+        if teardown is not None:
+            try:
+                teardown(env)
+            except Exception:
+                pass

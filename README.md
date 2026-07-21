@@ -103,23 +103,72 @@ crucible intake ./repo --paper paper.pdf --out spec.json
 # Analyze a repo, generate a plan, and run it through the validation gates.
 crucible plan ./repo
 
+# Full pipeline: intake ▸ plan ▸ validate ▸ execute ▸ adjudicate ▸ verdict + certificate.
+crucible submit ./repo --out cert.json
+
 # Reproduce a run byte-for-byte from its certificate (exit 0 iff reproduced).
-crucible replay certificate.json
+crucible replay cert.json
+
+# Harness-on vs harness-off comparison — the false-verdict table.
+crucible bench
 ```
 
 `crucible intake --paper` parses the PDF, extracts claims/baselines with an LLM,
 grounds each claim to a reproduce command, and prints them with provenance and
 confidence; the positive control reproduces the paper's own baseline number.
+`crucible submit` runs the whole harness end-to-end and emits a replayable
+certificate. `crucible bench` runs the built-in tasks through the real pipeline
+(harness-on) and a bare-agent stand-in (harness-off) and prints the
+false-verdict / decisiveness / correctness table.
+
+## Status (Stage 0)
+
+Implemented and tested end-to-end: **paper/repo → intake (extract + ground) →
+plan → validate → execute → verify → adjudicate → certify → replay → benchmark**,
+87 passing tests. Runs self-contained local repos on a subprocess runner.
+
+Docker isolation is implemented (persistent container + bind-mount workspace, CPU
+tested locally, GPU-ready — see below). Not yet: a real LLM harness-off arm,
+Stage-1 recovery/diagnosis, `docker commit` checkpointing, and Postgres/S3 storage.
 
 ## Develop
 
 ```bash
-uv run pytest -q             # 78 tests
+uv run pytest -q             # 87 tests
 uv run python -m examples.demo_local   # end-to-end: run ▸ verify ▸ adjudicate ▸ certify ▸ replay
 ```
 
 The demo runs a synthetic repo through the full loop with no Docker or network,
 printing the trace, the adjudicated verdict, and a `REPRODUCED` check.
+
+## Docker isolation
+
+By default the executor runs on `LocalSubprocessRunner` (no isolation). The
+Docker path runs each experiment in a **persistent container** (one per run) with
+the workspace bind-mounted, so installed dependencies persist across steps while
+the workspace stays host-visible for seeding, manifests, and replay. Network is
+default-deny (`--network none`); GPUs attach on request. Checkpoints are host-dir
+copies of the workspace (produced artifacts); `docker commit` layer capture is a
+later refinement.
+
+```bash
+# 1. Build the base image (CPU; see docker/base.Dockerfile for the CUDA variant)
+docker build -f docker/base.Dockerfile -t crucible/base:py3.12 .
+
+# 2. Run a repo under container isolation
+crucible submit ./repo --runner docker --image crucible/base:py3.12
+
+# GPU (Linux host with the NVIDIA Container Toolkit):
+crucible submit ./repo --runner docker --image crucible/base:cuda12.4-py3.12 --gpus all
+```
+
+macOS runs the CPU path fine; GPU passthrough (`--gpus`) requires a Linux host —
+use a cloud GPU box for CUDA experiments. Docker integration tests live in
+`tests/test_docker.py` and skip automatically when no daemon is present.
+
+Still a refinement, not yet done: `docker commit`-based checkpointing (so
+rollback also undoes dependency installs) and an allowlist egress proxy (so the
+`network_allowlist` gate becomes a live boundary rather than default-deny-all).
 
 ## Layout
 
@@ -136,7 +185,10 @@ crucible/
   certificate/    reproducibility certificates, replay, nondeterminism policy
   runners/        subprocess + docker runners
   envmgr/         local + docker environment managers
-  cli/            crucible intake | plan | replay
+  pipeline.py     end-to-end submit orchestration
+  benchmarks/     CORE-Bench tasks + harness-on/off arms
+  eval/           scoring + the false-verdict table
+  cli/            crucible intake | plan | submit | replay | bench
 docs/             the Stage-0 implementation plan
 examples/         end-to-end demo
 tests/            pytest suite
