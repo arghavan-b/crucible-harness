@@ -17,7 +17,14 @@ from .grounding import (
     ground_claims,
 )
 from .intake import Intake
-from .llm import AnthropicClient, FakeClient, LLMClient, OpenAIClient, default_client
+from .llm import (
+    AnthropicClient,
+    FakeClient,
+    LLMClient,
+    LoggingLLMClient,
+    OpenAIClient,
+    default_client,
+)
 from .paper import Figure, ParsedPaper, Table, parse_pdf
 
 __all__ = [
@@ -29,6 +36,7 @@ __all__ = [
     "Figure",
     "Intake",
     "LLMClient",
+    "LoggingLLMClient",
     "OpenAIClient",
     "PaperExtraction",
     "ParsedPaper",

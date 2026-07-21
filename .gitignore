@@ -20,6 +20,13 @@ venv/
 .env
 .env.*
 
+# CORE-Bench capsules (downloaded/extracted; not part of the harness)
+/capsule-*/
+capsule-*.tar.gz
+core_train.json
+core_test.json
+core_test.json.gpg
+
 # OS / editor
 .DS_Store
 .idea/

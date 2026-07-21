@@ -89,6 +89,28 @@ class OpenAIClient:
         return json.loads(resp.choices[0].message.content or "{}")
 
 
+class LoggingLLMClient:
+    """Wraps any client and records each call to the trace (design §6.5: the
+    planner/extractor are part of the experiment record). Transparent — it
+    implements the same LLMClient interface."""
+
+    def __init__(self, inner: LLMClient, recorder, trace_id: str, role: str) -> None:
+        self.inner = inner
+        self.recorder = recorder
+        self.trace_id = trace_id
+        self.role = role
+
+    def complete_json(self, prompt: str, images: list[tuple[str, str]] | None = None) -> dict:
+        output = self.inner.complete_json(prompt, images)
+        try:
+            self.recorder.record_llm_call(
+                self.trace_id, self.role, {"prompt": prompt, "n_images": len(images or [])}, output
+            )
+        except Exception:
+            pass
+        return output
+
+
 class FakeClient:
     """Returns queued responses. For tests and offline development."""
 

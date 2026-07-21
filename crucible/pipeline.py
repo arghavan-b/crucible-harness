@@ -25,7 +25,8 @@ from crucible.certificate.manifest import read_source
 from crucible.envmgr.manager import EnvironmentManager, LocalEnvironmentManager
 from crucible.executor.executor import RunResult, TransactionalExecutor
 from crucible.intake import Intake, ground_claims
-from crucible.intake.llm import LLMClient
+from crucible.intake.intake import _experiment_id
+from crucible.intake.llm import LLMClient, LoggingLLMClient
 from crucible.planner import TemplatePlanner
 from crucible.runners.base import LocalSubprocessRunner, Runner
 from crucible.schemas import ExecutionPlan, ExperimentSpec, ReproducibilityCertificate, Verdict
@@ -120,11 +121,19 @@ def run_pipeline(
     repo_dir = os.path.abspath(repo_dir)
     uri = repo_uri or f"local://{os.path.basename(repo_dir)}"
 
-    intake = Intake(llm=llm)
-    bindings = None
+    # Open one trace that spans the whole experiment — intake/grounding LLM calls
+    # and execution — so the certificate records every model call (design §6.5).
+    recorder = recorder or SQLiteTraceRecorder(
+        db_path or os.path.join(tempfile.mkdtemp(prefix="crucible_submit_"), "trace.sqlite")
+    )
+    trace_id = recorder.start(_experiment_id(uri))
+
+    intake_llm = LoggingLLMClient(llm, recorder, trace_id, "intake") if llm is not None else None
+    intake = Intake(llm=intake_llm)
     if paper and llm is not None:
         spec, extraction, analysis = intake.from_paper(paper, repo_uri=uri, root=repo_dir)
-        bindings = ground_claims(extraction.claims, repo_dir, llm=llm)
+        ground_llm = LoggingLLMClient(llm, recorder, trace_id, "grounding")
+        bindings = ground_claims(extraction.claims, repo_dir, llm=ground_llm)
     else:
         spec, analysis = intake.prepare(uri, root=repo_dir)
         bindings = ground_claims([], repo_dir)  # no claims to ground offline
@@ -136,13 +145,10 @@ def run_pipeline(
     _seed_repo(repo_dir, env.working_dir)
     source_files = read_source(env.working_dir)
 
-    recorder = recorder or SQLiteTraceRecorder(
-        db_path or os.path.join(tempfile.mkdtemp(prefix="crucible_submit_"), "trace.sqlite")
-    )
     runner = runner or LocalSubprocessRunner()
     executor = TransactionalExecutor(envmgr=envmgr, runner=runner, recorder=recorder, env=env)
     try:
-        run = executor.execute(plan, spec)  # validates; raises PlanValidationError if invalid
+        run = executor.execute(plan, spec, trace_id=trace_id)  # shares the trace above
 
         claim_id = spec.claims_under_test[0].claim_id if spec.claims_under_test else "c1"
         observations = observe(spec, run, env.working_dir, set(source_files))

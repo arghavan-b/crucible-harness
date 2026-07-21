@@ -22,8 +22,10 @@ BROKEN_REPO = (
 
 
 def _repo(tmp_path, body: str):
-    (tmp_path / "inference.py").write_text(body)  # 'inference.py' is a known entry name
-    return str(tmp_path)
+    repo = tmp_path / "repo"  # keep the repo separate from the trace db
+    repo.mkdir()
+    (repo / "inference.py").write_text(body)  # 'inference.py' is a known entry name
+    return str(repo)
 
 
 def test_submit_success_and_reproducible(tmp_path) -> None:

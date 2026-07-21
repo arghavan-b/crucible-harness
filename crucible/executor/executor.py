@@ -71,6 +71,7 @@ class TransactionalExecutor:
         plan: ExecutionPlan,
         spec: ExperimentSpec | None = None,
         validate: bool = True,
+        trace_id: str | None = None,
     ) -> RunResult:
         # Provision the workspace first (a benign side effect: no plan actions
         # run yet), so validation can seed dataflow with facts about inputs that
@@ -87,7 +88,9 @@ class TransactionalExecutor:
         if validate:
             record = validate_or_raise(plan, spec, initial_facts=self._initial_facts(env))
 
-        trace_id = self.recorder.start(plan.experiment_id)
+        # Reuse a caller-provided trace (so intake/grounding LLM calls and
+        # execution share one record) or open a fresh one.
+        trace_id = trace_id or self.recorder.start(plan.experiment_id)
         self.recorder.record(trace_id, "run_started", {"experiment_id": plan.experiment_id})
         if record is not None:
             self.recorder.record(trace_id, "validation", record.model_dump(mode="json"))
