@@ -54,6 +54,33 @@ def test_submit_execution_failure(tmp_path) -> None:
     assert result.run.stopped_at is not None
 
 
+def test_submit_recovers_a_broken_repo(tmp_path) -> None:
+    # A repo whose entry imports a module that doesn't exist yet.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "inference.py").write_text(
+        "import helper_mod, json, os\n"
+        "if __name__ == '__main__':\n"
+        "    os.makedirs('outputs', exist_ok=True)\n"
+        "    json.dump({'accuracy': helper_mod.VALUE}, open('outputs/metrics.json', 'w'))\n"
+    )
+    # Deterministic recovery: provide the missing module (stands in for pip install).
+    from crucible.recovery import FailureCause, PlaybookLibrary, RecoveryEngine
+    from crucible.recovery.playbook import Playbook, RepairAction
+
+    lib = PlaybookLibrary([Playbook(
+        playbook_id="provide_helper", cause=FailureCause.MISSING_DEPENDENCY,
+        repair=RepairAction(command="printf 'VALUE=0.9\\n' > helper_mod.py"))])
+
+    without = run_pipeline(str(repo), db_path=str(tmp_path / "a.sqlite"))
+    assert without.verdict.status is VerdictStatus.EXECUTION_FAILURE   # fails without recovery
+
+    withrec = run_pipeline(str(repo), db_path=str(tmp_path / "b.sqlite"),
+                           recovery=RecoveryEngine(lib))
+    assert withrec.run.all_succeeded                                   # recovery fixed it
+    assert any(r.repairs for r in withrec.run.step_results)
+
+
 def test_submit_certificate_has_real_plan(tmp_path) -> None:
     repo = _repo(tmp_path, GOOD_REPO)
     result = run_pipeline(repo, db_path=str(tmp_path / "t.sqlite"))

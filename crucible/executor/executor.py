@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from crucible.envmgr.manager import Environment, EnvironmentManager
 from crucible.runners.base import CommandResult, Runner
 from crucible.schemas import ExecutionPlan, ExperimentSpec, Step, StepState, ValidationRecord
+from crucible.recovery.engine import RecoveryEngine, RepairRecord
+from crucible.recovery.symptom import extract_symptom
 from crucible.trace.recorder import TraceRecorder
 from crucible.validation.gates import DEFAULT_INITIAL_FACTS, validate_or_raise
 from crucible.validation.predicates import Predicate
@@ -36,6 +38,7 @@ class StepResult:
     checkpoint_id: str | None = None
     state_delta: dict[str, object] = field(default_factory=dict)
     failure_reason: str | None = None
+    repairs: list[RepairRecord] = field(default_factory=list)
 
 
 @dataclass
@@ -60,11 +63,13 @@ class TransactionalExecutor:
         runner: Runner,
         recorder: TraceRecorder,
         env: Environment | None = None,
+        recovery: RecoveryEngine | None = None,
     ) -> None:
         self.envmgr = envmgr
         self.runner = runner
         self.recorder = recorder
         self._env = env
+        self.recovery = recovery   # None -> Stage-0 behavior (fail and stop)
 
     def execute(
         self,
@@ -140,69 +145,75 @@ class TransactionalExecutor:
                     step, trace_id, StepState.FAILED, f"precondition failed: {pred}"
                 )
 
-        # 2. Checkpoint before mutating.
-        checkpoint_id = self.envmgr.snapshot(env)
-
-        # 3. Execute the action.
-        last: CommandResult | None = None
-        if step.action.kind == "shell" and step.action.command:
-            last = run(step.action.command)
-            self.recorder.record(
-                trace_id,
-                "command",
-                {
-                    "step_id": step.step_id,
-                    "command": step.action.command,
-                    "exit_code": last.exit_code,
-                    "stdout_tail": last.stdout[-2000:],
-                    "stderr_tail": last.stderr[-2000:],
-                },
-            )
-        else:
+        if step.action.kind != "shell" or not step.action.command:
             return self._fail(
                 step, trace_id, StepState.FAILED, f"unsupported action kind: {step.action.kind}"
             )
 
-        # 4. Capture state delta (ΔS).
-        delta = self.envmgr.diff(checkpoint_id, env)
-        self.recorder.record(trace_id, "state_delta", {"step_id": step.step_id, "delta": delta})
+        # 2. Checkpoint before mutating.
+        checkpoint_id = self.envmgr.snapshot(env)
 
-        # 5. Verify.
-        self.recorder.record(
-            trace_id, "step_state", {"step_id": step.step_id, "state": "VERIFYING"}
-        )
-        ctx = VerifierContext(working_dir=env.working_dir, last_result=last, run=run)
-        verifier = catalog.get(step.verifier)
-        vres = verifier(ctx, dict(step.verifier_args))
-        self.recorder.record(
-            trace_id,
-            "verification",
-            {"step_id": step.step_id, "verifier": step.verifier, "passed": vres.passed,
-             "detail": vres.detail},
-        )
-        if not vres.passed:
-            return StepResult(
-                step_id=step.step_id,
-                state=StepState.FAILED,
-                exit_code=last.exit_code,
-                verifier_passed=False,
-                verifier_detail=vres.detail,
-                checkpoint_id=checkpoint_id,
-                state_delta=delta,
-                failure_reason=f"verifier '{step.verifier}' failed: {vres.detail}",
-            )
+        # 3-6. Execute -> ΔS -> verify -> commit, with a bounded diagnose/recover
+        # loop on failure (design §9). Stage 0 (no recovery) does one attempt.
+        repairs: list[RepairRecord] = []
+        max_repairs = step.budget.retries if self.recovery is not None else 0
+        attempt = 0
+        while True:
+            last = run(step.action.command)
+            self.recorder.record(trace_id, "command", {
+                "step_id": step.step_id, "command": step.action.command,
+                "exit_code": last.exit_code, "stdout_tail": last.stdout[-2000:],
+                "stderr_tail": last.stderr[-2000:],
+            })
 
-        # 6. Commit.
-        self.recorder.record(trace_id, "step_state", {"step_id": step.step_id, "state": "SUCCEEDED"})
-        return StepResult(
-            step_id=step.step_id,
-            state=StepState.SUCCEEDED,
-            exit_code=last.exit_code,
-            verifier_passed=True,
-            verifier_detail=vres.detail,
-            checkpoint_id=checkpoint_id,
-            state_delta=delta,
-        )
+            delta = self.envmgr.diff(checkpoint_id, env)
+            self.recorder.record(trace_id, "state_delta", {"step_id": step.step_id, "delta": delta})
+
+            self.recorder.record(trace_id, "step_state", {"step_id": step.step_id, "state": "VERIFYING"})
+            ctx = VerifierContext(working_dir=env.working_dir, last_result=last, run=run)
+            vres = catalog.get(step.verifier)(ctx, dict(step.verifier_args))
+            self.recorder.record(trace_id, "verification", {
+                "step_id": step.step_id, "verifier": step.verifier,
+                "passed": vres.passed, "detail": vres.detail,
+            })
+
+            if vres.passed:
+                self.recorder.record(trace_id, "step_state", {"step_id": step.step_id, "state": "SUCCEEDED"})
+                return StepResult(
+                    step_id=step.step_id, state=StepState.SUCCEEDED, exit_code=last.exit_code,
+                    verifier_passed=True, verifier_detail=vres.detail,
+                    checkpoint_id=checkpoint_id, state_delta=delta, repairs=repairs,
+                )
+
+            reason = f"verifier '{step.verifier}' failed: {vres.detail}"
+            if self.recovery is None or attempt >= max_repairs:
+                return StepResult(
+                    step_id=step.step_id, state=StepState.FAILED, exit_code=last.exit_code,
+                    verifier_passed=False, verifier_detail=vres.detail,
+                    checkpoint_id=checkpoint_id, state_delta=delta,
+                    failure_reason=reason, repairs=repairs,
+                )
+
+            # Diagnose the symptom and apply a repair, then re-attempt.
+            self.recorder.record(trace_id, "step_state", {"step_id": step.step_id, "state": "DIAGNOSING"})
+            symptom = extract_symptom(step.step_id, last)
+            repair = self.recovery.recover(symptom, run)
+            self.recorder.record(trace_id, "recovery", {
+                "step_id": step.step_id,
+                "playbook": repair.playbook_id if repair else None,
+                "cause": repair.cause if repair else None,
+                "applied": repair.applied if repair else False,
+            })
+            if repair is None:
+                return StepResult(
+                    step_id=step.step_id, state=StepState.FAILED, exit_code=last.exit_code,
+                    verifier_passed=False, verifier_detail=vres.detail,
+                    checkpoint_id=checkpoint_id, state_delta=delta,
+                    failure_reason=f"{reason}; no matching recovery playbook", repairs=repairs,
+                )
+            repairs.append(repair)
+            attempt += 1
+            self.recorder.record(trace_id, "step_state", {"step_id": step.step_id, "state": "RECOVERING"})
 
     def _check_precondition(self, predicate: str, run) -> bool:
         """Minimal Stage-0 predicate evaluator.

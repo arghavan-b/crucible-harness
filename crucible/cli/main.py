@@ -25,6 +25,7 @@ def submit(
     isolation: str = typer.Option("subprocess", "--runner", help="subprocess | docker"),
     image: str | None = typer.Option(None, "--image", help="Docker base image (with --runner docker)."),
     gpus: str | None = typer.Option(None, "--gpus", help="GPU passthrough, e.g. 'all' (docker only)."),
+    recover: bool = typer.Option(False, "--recover", help="Enable diagnosis + recovery (design §9)."),
 ) -> None:
     """Intake -> plan -> validate -> execute -> adjudicate -> verdict + certificate (design §22)."""
     from crucible.pipeline import run_pipeline
@@ -48,9 +49,35 @@ def submit(
         envmgr = DockerEnvironmentManager(base_image=image or "crucible/base:py3.12", gpus=gpus)
         runner = DockerExecRunner(envmgr)
 
+    recovery = None
+    if recover:
+        from crucible.recovery import (
+            CascadingDiagnoser,
+            LLMDiagnoser,
+            RecoveryEngine,
+            RuleDiagnoser,
+            seed_library,
+        )
+
+        diagnoser = RuleDiagnoser()
+        client = llm
+        if client is None:
+            try:
+                from crucible.intake import default_client
+
+                client = default_client()
+            except RuntimeError:
+                client = None
+        if client is not None:
+            diagnoser = CascadingDiagnoser(RuleDiagnoser(), LLMDiagnoser(client))
+            typer.echo("recovery: rules + LLM diagnoser")
+        else:
+            typer.echo("recovery: rules only (set an API key for the LLM diagnoser)")
+        recovery = RecoveryEngine(seed_library(), diagnoser)
+
     try:
         result = run_pipeline(repo_dir, repo_uri=repo_uri, paper=paper, llm=llm,
-                              envmgr=envmgr, runner=runner)
+                              envmgr=envmgr, runner=runner, recovery=recovery)
     except PlanValidationError as exc:
         typer.echo("plan rejected by validation:")
         for f in exc.record.blocking():
@@ -62,6 +89,9 @@ def submit(
     for r in result.run.step_results:
         mark = "ok " if r.state.value == "SUCCEEDED" else "FAIL"
         typer.echo(f"  [{mark}] {r.step_id}")
+        for rep in r.repairs:
+            tag = "SCIENTIFIC" if rep.scientific else "infra"
+            typer.echo(f"        ↳ repair: {rep.playbook_id} ({rep.cause}, {tag})")
     v = result.verdict
     typer.echo(f"\nverdict: {v.status.value} (confidence {v.confidence:.2f})")
     if v.reason:

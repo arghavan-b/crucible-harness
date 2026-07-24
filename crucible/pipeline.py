@@ -28,6 +28,7 @@ from crucible.intake import Intake, ground_claims
 from crucible.intake.intake import _experiment_id
 from crucible.intake.llm import LLMClient, LoggingLLMClient
 from crucible.planner import TemplatePlanner
+from crucible.recovery.engine import RecoveryEngine
 from crucible.runners.base import LocalSubprocessRunner, Runner
 from crucible.schemas import ExecutionPlan, ExperimentSpec, ReproducibilityCertificate, Verdict
 from crucible.trace.recorder import SQLiteTraceRecorder, TraceRecorder
@@ -117,6 +118,7 @@ def run_pipeline(
     envmgr: EnvironmentManager | None = None,
     runner: Runner | None = None,
     recorder: TraceRecorder | None = None,
+    recovery: RecoveryEngine | None = None,
 ) -> PipelineResult:
     repo_dir = os.path.abspath(repo_dir)
     uri = repo_uri or f"local://{os.path.basename(repo_dir)}"
@@ -146,7 +148,9 @@ def run_pipeline(
     source_files = read_source(env.working_dir)
 
     runner = runner or LocalSubprocessRunner()
-    executor = TransactionalExecutor(envmgr=envmgr, runner=runner, recorder=recorder, env=env)
+    executor = TransactionalExecutor(
+        envmgr=envmgr, runner=runner, recorder=recorder, env=env, recovery=recovery
+    )
     try:
         run = executor.execute(plan, spec, trace_id=trace_id)  # shares the trace above
 
