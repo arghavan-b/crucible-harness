@@ -52,6 +52,20 @@ repo ──────┘   (extract claims,    (claims,      (LLM proposes,   
 
 ## What's implemented (Stage 0)
 
+- **Claims** (`crucible/claims/`) — the typed `Claim` object (subject/relation/
+  comparator/margin, endpoint, dataset, split, representation) extracted from a
+  paper or report, plus the **AcceptancePolicy** that states the constraints and
+  requirements a verdict is measured against ("no acceptance policy, no
+  verdict" — intake generates a domain default and marks it `generated`). A
+  policy + claim compile deterministically into a closed set of
+  **evidence requirements**. The **Procedure Compiler** locates the artifacts
+  those checks need in a repo — split code, molecule lists, featurizer, metric
+  function, baseline, preprocessing — scores each Present/Reconstructible/Missing,
+  classifies scientific vs infrastructure files, and emits an **auditability
+  score**. Missing split code *and* molecule lists caps the claim at
+  `INCONCLUSIVE(artifacts_unavailable)`. Static only: no execution, no network.
+  An adapter maps a Claim down to an `ExperimentSpec` so the existing executor
+  and adjudicator run unchanged.
 - **Intake** (`crucible/intake/`) — PDF parsing (text, tables via pdfplumber,
   figure images via PyMuPDF), LLM extraction of claims + baselines with
   provenance and confidence (Claude/GPT, vision-capable), and **claim→repo
@@ -96,6 +110,12 @@ Python 3.12+. For paper-driven intake, set `ANTHROPIC_API_KEY` or `OPENAI_API_KE
 ## CLI
 
 ```bash
+# Extract typed claims + acceptance policies from a paper/report, and report
+# which required artifacts the repo actually has (static, no execution).
+crucible claim --paper paper.pdf --repo ./repo
+crucible claim --paper report.md --repo ./repo --llm --out claims.json --spec-out specs.json
+crucible claim --repo ./repo            # auditability score only — can this ever be checked?
+
 # Draft an experiment spec from a repo, optionally extracting claims from a paper.
 crucible intake ./repo
 crucible intake ./repo --paper paper.pdf --out spec.json
@@ -123,9 +143,10 @@ false-verdict / decisiveness / correctness table.
 
 ## Status (Stage 0)
 
-Implemented and tested end-to-end: **paper/repo → intake (extract + ground) →
-plan → validate → execute → verify → adjudicate → certify → replay → benchmark**,
-87 passing tests. Runs self-contained local repos on a subprocess runner.
+Implemented and tested end-to-end: **paper/repo → claims (+ acceptance policy +
+artifact report) → intake (extract + ground) → plan → validate → execute →
+verify → adjudicate → certify → replay → benchmark**, 145 passing tests. Runs
+self-contained local repos on a subprocess runner.
 
 Docker isolation is implemented (persistent container + bind-mount workspace, CPU
 tested locally, GPU-ready — see below). Not yet: a real LLM harness-off arm,
@@ -134,7 +155,7 @@ Stage-1 recovery/diagnosis, `docker commit` checkpointing, and Postgres/S3 stora
 ## Develop
 
 ```bash
-uv run pytest -q             # 87 tests
+uv run pytest -q             # 145 tests
 uv run python -m examples.demo_local   # end-to-end: run ▸ verify ▸ adjudicate ▸ certify ▸ replay
 ```
 
@@ -175,6 +196,7 @@ rollback also undoes dependency installs) and an allowlist egress proxy (so the
 ```
 crucible/
   schemas/        pydantic models — the API surface (spec, plan, verdict, certificate, policy)
+  claims/         typed Claim + AcceptancePolicy, Procedure Compiler, ExperimentSpec adapter
   intake/         paper parsing, LLM extraction, claim→repo grounding
   planner/        repo analysis + template/LLM planners
   validation/     plan-validation gates, predicate grammar, dataflow
@@ -188,7 +210,7 @@ crucible/
   pipeline.py     end-to-end submit orchestration
   benchmarks/     CORE-Bench tasks + harness-on/off arms
   eval/           scoring + the false-verdict table
-  cli/            crucible intake | plan | submit | replay | bench
+  cli/            crucible claim | intake | plan | submit | replay | bench
 docs/             the Stage-0 implementation plan
 examples/         end-to-end demo
 tests/            pytest suite

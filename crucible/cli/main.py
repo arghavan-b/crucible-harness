@@ -195,6 +195,104 @@ def intake(
 
 
 @app.command()
+def claim(
+    paper: str | None = typer.Option(None, "--paper", help="Paper or report to extract claims from (.pdf/.md/.txt)."),
+    repo: str | None = typer.Option(None, "--repo", help="Repo to compile for required artifacts."),
+    llm: bool = typer.Option(False, "--llm", help="Use an LLM extractor (needs an API key)."),
+    out: str | None = typer.Option(None, "--out", help="Write the ClaimSet JSON here."),
+    spec_out: str | None = typer.Option(None, "--spec-out", help="Write adapted ExperimentSpec(s) here."),
+) -> None:
+    """Extract typed claims + acceptance policies, and report artifact availability.
+
+    Static only (T0): no execution, no network beyond the optional LLM call.
+    Runs offline with a heuristic extractor when --llm is not given.
+    """
+    from crucible.claims import ClaimIntake, describe, specs_from_claims
+    from crucible.claims.compiler import Availability
+
+    if not paper and not repo:
+        typer.echo("claim: supply --paper and/or --repo")
+        raise typer.Exit(code=2)
+
+    client = None
+    if llm:
+        from crucible.intake import default_client
+
+        try:
+            client = default_client()
+        except RuntimeError as exc:
+            typer.echo(f"claim: {exc}")
+            raise typer.Exit(code=1) from None
+
+    result = ClaimIntake(llm=client).ingest(paper=paper, repo=repo)
+
+    if result.artifacts is not None:
+        report = result.artifacts
+        typer.echo(f"artifacts: {report.summary()}")
+        for finding in report.findings:
+            mark = {
+                Availability.PRESENT: "ok  ",
+                Availability.RECONSTRUCTIBLE: "recon",
+                Availability.MISSING: "MISS",
+            }[finding.availability]
+            where = finding.locations[0].file if finding.locations else (finding.detail or "")
+            typer.echo(f"  [{mark}] {finding.kind.value:24s} {where}")
+        typer.echo(
+            f"  scientific-path files: {len(report.scientific_path)} · "
+            f"infrastructure: {len(report.infrastructure_path)}"
+        )
+
+    typer.echo(f"\nclaims: {len(result.claims)} extracted")
+    for c in result.claims:
+        ok, reason = c.is_adjudicable()
+        typer.echo(f"\n  {c.claim_id} [{c.type.value}] confidence={c.confidence:.2f}")
+        typer.echo(
+            f"    {c.statement.subject} {c.statement.relation.value} "
+            f"{c.statement.comparator or '(no comparator)'}"
+        )
+        typer.echo(
+            f"    metric={c.metric or '(none)'} endpoint={c.context.endpoint or '(none)'} "
+            f"split={c.context.split.method.value}"
+        )
+        typer.echo(
+            f"    reported: subject={c.reported.subject_value} "
+            f"comparator={c.reported.comparator_value}"
+        )
+        if c.source:
+            typer.echo(f"    source: {c.source.location}")
+        typer.echo(f"    adjudicable: {'yes' if ok else f'no ({reason})'}")
+        if c.acceptance_policy:
+            typer.echo("    acceptance policy:")
+            for line in describe(c.acceptance_policy):
+                typer.echo(f"      {line}")
+            typer.echo(f"    requirements ({len(c.requirements())}):")
+            for req in c.requirements():
+                typer.echo(f"      - {req.value}")
+
+    for warning in result.warnings:
+        typer.echo(f"\nwarning: {warning}")
+    if result.blocked_reason:
+        typer.echo(
+            f"\nVERDICT CAP: INCONCLUSIVE({result.blocked_reason}) "
+            "— the split cannot be checked from what is available"
+        )
+
+    if out:
+        with open(out, "w", encoding="utf-8") as f:
+            f.write(result.claim_set.model_dump_json(indent=2))
+        typer.echo(f"\nwrote claims -> {out}")
+    if spec_out:
+        import json
+
+        specs = specs_from_claims(result.adjudicable(), repo or (paper or "unknown"))
+        with open(spec_out, "w", encoding="utf-8") as f:
+            json.dump([s.model_dump(mode="json") for s in specs], f, indent=2)
+        typer.echo(f"wrote {len(specs)} spec(s) -> {spec_out}")
+
+    raise typer.Exit(code=0 if result.adjudicable() else 1)
+
+
+@app.command()
 def plan(repo_dir: str = typer.Argument(..., help="Path to a local repo to analyze and plan.")) -> None:
     """Intake -> plan -> validate for a local repo, printing the plan and gate result."""
     from crucible.intake import Intake
