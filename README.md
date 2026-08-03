@@ -103,6 +103,10 @@ Not yet built: recovery/diagnosis (Stage 1), the CORE-Bench eval harness, the
 Docker environment path (written, untested), and Postgres/S3 storage (runs on
 SQLite + local files for now).
 
+Paper-analysis tooling includes a pinned CORE-Bench public-log downloader and
+annotation-to-public-ID bridge. See [`data/corebench/README.md`](data/corebench/README.md)
+for provenance, reproduction commands, and redistribution caveats.
+
 ## Install
 
 ```bash
