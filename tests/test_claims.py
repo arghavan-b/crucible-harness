@@ -329,6 +329,67 @@ def test_auditability_score_is_a_fraction_and_drops_when_artifacts_vanish(tmp_pa
     assert 0.0 <= sparse < full <= 1.0
 
 
+@pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("data/train.csv", True),
+        ("data/2004-04_train.csv", True),       # date-prefixed — the common case
+        ("data/test_fold1.csv", True),
+        ("data/holdout.csv", True),
+        ("data/latest.csv", False),            # 'test' inside a word, not a token
+        ("data/pretrain.csv", False),
+        ("data/trainer.py", False),
+    ],
+)
+def test_split_list_naming_variants(tmp_path, name, expected):
+    path = tmp_path / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("smiles,y\nCCO,1\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text("print(1)\n", encoding="utf-8")
+    report = compile_procedure(str(tmp_path))
+    found = report.availability_of(ArtifactKind.SPLIT_MOLECULE_LISTS) is Availability.PRESENT
+    assert found is expected
+
+
+def test_predictions_found_by_results_directory_not_just_filename(tmp_path):
+    """`results/lp_res_0/CTGCN-C_auc_record.csv` mentions neither 'prediction'
+    nor 'output' — filename-only matching reported no predictions shipped."""
+    out = tmp_path / "results" / "lp_res_0"
+    out.mkdir(parents=True)
+    (out / "CTGCN-C_auc_record.csv").write_text("date,Avg\n2004-05,0.91\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text("print(1)\n", encoding="utf-8")
+    report = compile_procedure(str(tmp_path))
+    assert report.availability_of(ArtifactKind.PREDICTIONS) is Availability.PRESENT
+
+
+def test_split_files_under_results_are_not_reported_as_predictions(tmp_path):
+    data = tmp_path / "results" / "lp_data_0"
+    data.mkdir(parents=True)
+    (data / "2004-04_train.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text("print(1)\n", encoding="utf-8")
+    report = compile_procedure(str(tmp_path))
+    assert report.availability_of(ArtifactKind.SPLIT_MOLECULE_LISTS) is Availability.PRESENT
+    # No genuine prediction file exists, so PREDICTIONS must not be satisfied
+    # by the split file that happens to live under results/.
+    assert report.availability_of(ArtifactKind.PREDICTIONS) is Availability.MISSING
+
+
+def test_ratio_arithmetic_counts_as_split_code(tmp_path):
+    """Repos that slice by `int(n * test_ratio)` never call a named splitter."""
+    (tmp_path / "link_prediction.py").write_text(
+        "class Splitter:\n"
+        "    def __init__(self, train_ratio=0.5, val_ratio=0.2, test_ratio=0.3):\n"
+        "        self.test_ratio = test_ratio\n"
+        "    def run(self, edge_num):\n"
+        "        test_num = int(edge_num * self.test_ratio)\n",
+        encoding="utf-8",
+    )
+    report = compile_procedure(str(tmp_path))
+    finding = report.by_kind(ArtifactKind.SPLIT_CODE)
+    assert finding.availability is Availability.PRESENT
+    assert any(loc.file == "link_prediction.py" for loc in finding.locations)
+
+
 def test_compiler_separates_scientific_from_infrastructure_paths(tmp_path):
     _make_repo(tmp_path)
     report = compile_procedure(str(tmp_path))

@@ -62,8 +62,14 @@ repo ──────┘   (extract claims,    (claims,      (LLM proposes,   
   those checks need in a repo — split code, molecule lists, featurizer, metric
   function, baseline, preprocessing — scores each Present/Reconstructible/Missing,
   classifies scientific vs infrastructure files, and emits an **auditability
-  score**. Missing split code *and* molecule lists caps the claim at
-  `INCONCLUSIVE(artifacts_unavailable)`. Static only: no execution, no network.
+  score**. It also extracts the **run config** — entry point, the reproduce
+  command sequence (run script > Makefile > README), the config files actually
+  named on those commands, their decision-relevant parameters, and argparse
+  choices — so the split the code *ran with* (`train_ratio: 0.5`) can be checked
+  against the split the paper *claims*. Missing split code *and* molecule lists
+  caps the claim at `INCONCLUSIVE(artifacts_unavailable)`; a split declared as
+  config ratios with no pinned seed caps at `INCONCLUSIVE(split_not_regenerable)`.
+  Static only: no execution, no network.
   An adapter maps a Claim down to an `ExperimentSpec` so the existing executor
   and adjudicator run unchanged.
 - **Intake** (`crucible/intake/`) — PDF parsing (text, tables via pdfplumber,
@@ -145,7 +151,7 @@ false-verdict / decisiveness / correctness table.
 
 Implemented and tested end-to-end: **paper/repo → claims (+ acceptance policy +
 artifact report) → intake (extract + ground) → plan → validate → execute →
-verify → adjudicate → certify → replay → benchmark**, 145 passing tests. Runs
+verify → adjudicate → certify → replay → benchmark**, 184 passing tests. Runs
 self-contained local repos on a subprocess runner.
 
 Docker isolation is implemented (persistent container + bind-mount workspace, CPU
@@ -155,8 +161,9 @@ Stage-1 recovery/diagnosis, `docker commit` checkpointing, and Postgres/S3 stora
 ## Develop
 
 ```bash
-uv run pytest -q             # 145 tests
-uv run python -m examples.demo_local   # end-to-end: run ▸ verify ▸ adjudicate ▸ certify ▸ replay
+uv run pytest -q             # 184 tests
+uv run python -m examples.demo_local        # end-to-end: run ▸ verify ▸ adjudicate ▸ certify ▸ replay
+uv run python -m examples.score_extraction  # scored claim/config extraction vs a real answer key
 ```
 
 The demo runs a synthetic repo through the full loop with no Docker or network,

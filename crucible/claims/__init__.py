@@ -19,6 +19,7 @@ from .compiler import (
 from .extract import EXTRACTION_INSTRUCTIONS, Extractor, HeuristicExtractor, LLMExtractor
 from .intake import ClaimIntake, ClaimIntakeResult
 from .policy import default_policy, describe, ensure_policies, ensure_policy, policy_for_claim
+from .runconfig import ConfigFile, RunCommand, RunConfig, extract_run_config
 from .schema import (
     AcceptancePolicy,
     AssayType,
@@ -55,6 +56,7 @@ __all__ = [
     "ClaimIntakeResult",
     "ClaimSet",
     "ClaimType",
+    "ConfigFile",
     "DatasetRef",
     "DedupPolicy",
     "EvidenceRequirement",
@@ -66,6 +68,8 @@ __all__ = [
     "Relation",
     "ReportedValues",
     "Representation",
+    "RunCommand",
+    "RunConfig",
     "SourceRef",
     "SplitMethod",
     "SplitSpec",
@@ -76,6 +80,7 @@ __all__ = [
     "dropped_requirements",
     "ensure_policies",
     "ensure_policy",
+    "extract_run_config",
     "policy_for_claim",
     "repo_summary",
     "spec_from_claim",

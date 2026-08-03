@@ -1,9 +1,10 @@
 """Small, dependency-free statistics for verdict adjudication (design §8.3).
 
 Welch's t-test and a one-sample t-test with two-sided p-values via the
-regularized incomplete beta function (Numerical Recipes `betai`). Kept
-self-contained so the harness has no scipy/numpy dependency; accuracy is ample
-for the handful of seeds a claim is run across.
+regularized incomplete beta function (Numerical Recipes `betai`), plus the
+inverse (a t critical value by bisection) used to size prediction intervals.
+Kept self-contained so the harness has no scipy/numpy dependency; accuracy is
+ample for the handful of seeds a claim is run across.
 """
 
 from __future__ import annotations
@@ -80,6 +81,48 @@ def _t_two_sided_p(t: float, df: float) -> float:
     if df <= 0:
         return 1.0
     return _betai(df / 2.0, 0.5, df / (df + t * t))
+
+
+def t_critical(df: float, alpha: float = 0.05) -> float:
+    """Two-sided critical value: t such that P(|T_df| > t) == alpha.
+
+    Inverts `_t_two_sided_p` by bisection (it is strictly decreasing in t).
+    Dependency-free counterpart to `scipy.stats.t.ppf(1 - alpha/2, df)`.
+    """
+    if df <= 0 or not 0.0 < alpha < 1.0:
+        raise ValueError(f"t_critical requires df > 0 and 0 < alpha < 1, got {df=} {alpha=}")
+    lo, hi = 0.0, 1.0
+    while _t_two_sided_p(hi, df) > alpha:
+        hi *= 2.0
+        if hi > 1e6:                      # pathological df; interval is unbounded
+            return hi
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if _t_two_sided_p(mid, df) > alpha:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def prediction_interval_halfwidth(values: list[float], alpha: float = 0.05) -> float | None:
+    """Half-width of the (1-alpha) prediction interval for ONE new observation.
+
+    This is the right quantity for "would another run of this experiment land
+    close enough to the reported value?" — wider than a confidence interval on
+    the mean, because it must cover the new run's own sampling noise:
+
+        mean +/- t(1-alpha/2, n-1) * s * sqrt(1 + 1/n)
+
+    Returns None when n < 2, where the spread is not estimable from the data.
+    """
+    n = len(values)
+    if n < 2:
+        return None
+    s = math.sqrt(variance(values))       # sample stdev, ddof=1
+    if s == 0.0:
+        return 0.0
+    return t_critical(n - 1, alpha) * s * math.sqrt(1.0 + 1.0 / n)
 
 
 def welch_t_test(a: list[float], b: list[float]) -> TTest:

@@ -242,6 +242,32 @@ def claim(
             f"infrastructure: {len(report.infrastructure_path)}"
         )
 
+        run = report.run_config
+        if run is not None:
+            typer.echo(f"\nrun config: {run.summary()}")
+            if run.entry_points:
+                typer.echo(f"  entry points: {', '.join(run.entry_points[:5])}")
+            for cmd in run.reproduce_commands[:8]:
+                typer.echo(f"  $ {cmd.command}   [{cmd.kind}: {cmd.source}]")
+            referenced = run.configs_referenced()
+            if referenced:
+                typer.echo(f"  configs used: {', '.join(referenced)}")
+            for cfg in run.config_files[:3]:
+                if cfg.params:
+                    typer.echo(f"  {cfg.path}:")
+                    for key, value in list(cfg.params.items())[:12]:
+                        typer.echo(f"      {key} = {value}")
+            split = run.declared_split()
+            if split:
+                typer.echo("  declared split (what the code ran with):")
+                for key, value in list(split.items())[:8]:
+                    typer.echo(f"      {key} = {value}")
+            seeds = run.declared_seeds()
+            if seeds:
+                typer.echo(f"  declared seeds: {', '.join(f'{k}={v}' for k, v in seeds.items())}")
+            for flag, values in list(run.cli_choices.items())[:6]:
+                typer.echo(f"  choices {flag}: {', '.join(values)}")
+
     typer.echo(f"\nclaims: {len(result.claims)} extracted")
     for c in result.claims:
         ok, reason = c.is_adjudicable()

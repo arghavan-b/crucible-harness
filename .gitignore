@@ -27,6 +27,11 @@ core_train.json
 core_test.json
 core_test.json.gpg
 
+# Test fixtures built on demand (see tests/fixtures/make_pdf.py). The real
+# arXiv PDF, if you drop one in, is also not committed.
+tests/fixtures/*_generated.pdf
+tests/fixtures/ctgcn_paper.pdf
+
 # OS / editor
 .DS_Store
 .idea/

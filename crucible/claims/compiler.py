@@ -27,6 +27,8 @@ from pydantic import BaseModel, Field
 
 from crucible.schemas import PathClass
 
+from .runconfig import RunConfig, extract_run_config
+
 _SKIP_DIRS = {".git", "__pycache__", ".venv", "node_modules", ".mypy_cache", ".pytest_cache"}
 _CODE_EXTS = (".py", ".ipynb", ".R", ".r")
 _DATA_EXTS = (".csv", ".tsv", ".smi", ".sdf", ".parquet", ".json", ".txt", ".npy", ".pkl")
@@ -60,16 +62,26 @@ _SIGNATURES: list[tuple[ArtifactKind, re.Pattern[str], re.Pattern[str] | None, P
         re.compile(r"(^|/)(split|splits|splitter|data_split|partition)[\w-]*\.(py|ipynb|r)$", re.I),
         re.compile(
             r"def\s+\w*split\w*\(|scaffold_split|ScaffoldSplitter|RandomSplitter|"
-            r"train_test_split|GroupShuffleSplit|KFold|create_fold|get_split",
+            r"train_test_split|GroupShuffleSplit|KFold|create_fold|get_split|"
+            # Ratio arithmetic is splitting too. Plenty of repos never call a
+            # named splitter — they slice by `int(n * self.test_ratio)` — and
+            # matching only library splitters reports "no split code" on code
+            # that plainly partitions the data.
+            r"train_ratio|val_ratio|test_ratio|(test|val|train)_num\s*=",
             re.I,
         ),
         PathClass.SCIENTIFIC,
     ),
     (
         ArtifactKind.SPLIT_MOLECULE_LISTS,
+        # The split token may sit anywhere in the stem, delimited by _ or -:
+        # `train.csv`, `2004-04_train.csv`, `test_fold1.csv` all count. Anchoring
+        # it to the start of the filename (the obvious first cut) misses the
+        # extremely common date/fold-prefixed naming, while the delimiter
+        # requirement still rejects `latest.csv` and `pretrain.csv`.
         re.compile(
-            r"(^|/)(train|training|val|valid|validation|test|holdout)[\w-]*\."
-            r"(csv|tsv|smi|txt|json|parquet)$",
+            r"(^|/)([\w.-]*[_-])?(train|training|val|valid|validation|test|holdout)"
+            r"([_-][\w.-]*)?\.(csv|tsv|smi|txt|json|parquet)$",
             re.I,
         ),
         None,
@@ -129,8 +141,18 @@ _SIGNATURES: list[tuple[ArtifactKind, re.Pattern[str], re.Pattern[str] | None, P
     ),
     (
         ArtifactKind.PREDICTIONS,
-        re.compile(r"(^|/)[\w-]*(prediction|preds|y_pred|output|result)[\w-]*\."
-                   r"(csv|tsv|json|npy|parquet)$", re.I),
+        # Two ways to be an evaluation output: named like one, or living in a
+        # results/output directory. Research repos routinely do the latter with
+        # names that mention neither "prediction" nor "output"
+        # (`results/lp_res_0/CTGCN-C_auc_record.csv`), so filename-only matching
+        # silently reports "no predictions shipped" on repos that ship plenty.
+        re.compile(
+            r"(^|/)(results?|outputs?|preds?|predictions?|eval|evaluation|scores?|metrics?)/"
+            r".*\.(csv|tsv|json|npy|parquet)$"
+            r"|(^|/)[\w.-]*(prediction|preds|y_pred|y_hat|output|result|record|score|metric)"
+            r"[\w.-]*\.(csv|tsv|json|npy|parquet)$",
+            re.I,
+        ),
         None,
         PathClass.SCIENTIFIC,
     ),
@@ -181,6 +203,9 @@ class ArtifactReport(BaseModel):
     findings: list[ArtifactFinding] = Field(default_factory=list)
     scientific_path: list[str] = Field(default_factory=list)
     infrastructure_path: list[str] = Field(default_factory=list)
+    run_config: RunConfig | None = Field(
+        default=None, description="how the repo is run, and with which config/parameters"
+    )
 
     def by_kind(self, kind: ArtifactKind) -> ArtifactFinding | None:
         return next((f for f in self.findings if f.kind is kind), None)
@@ -203,12 +228,24 @@ class ArtifactReport(BaseModel):
     def blocking_reason(self) -> str | None:
         """The design's hard gate: no split code AND no molecule lists means the
         split can never be checked, and the split group is the highest-yield set
-        of checks — so the claim caps at INCONCLUSIVE(artifacts_unavailable)."""
+        of checks — so the claim caps at INCONCLUSIVE(artifacts_unavailable).
+
+        Refined by what the run config declares. Plenty of real repos have no
+        file named like a splitter because the split is a *ratio in a config*
+        (`train_ratio: 0.5`). That is not "unavailable" — the split is stated,
+        just not necessarily regenerable. The two cases get different reasons
+        because the remedy differs: one needs the artifacts published, the other
+        needs a seed.
+        """
         code = self.availability_of(ArtifactKind.SPLIT_CODE)
         lists = self.availability_of(ArtifactKind.SPLIT_MOLECULE_LISTS)
-        if code is Availability.MISSING and lists is Availability.MISSING:
-            return "artifacts_unavailable"
-        return None
+        if code is not Availability.MISSING or lists is not Availability.MISSING:
+            return None
+        run = self.run_config
+        if run is not None and run.declared_split():
+            # Split parameters are declared. Regenerable only with a pinned seed.
+            return None if run.declared_seeds() else "split_not_regenerable"
+        return "artifacts_unavailable"
 
     def missing(self) -> list[ArtifactKind]:
         return [f.kind for f in self.findings if f.availability is Availability.MISSING]
@@ -216,6 +253,8 @@ class ArtifactReport(BaseModel):
     def summary(self) -> str:
         blocked = self.blocking_reason()
         head = f"auditability {self.auditability_score:.0%}"
+        if blocked == "split_not_regenerable":
+            return f"{head} — BLOCKED ({blocked}): split ratios declared but no seed pinned"
         if blocked:
             return f"{head} — BLOCKED ({blocked}): no split code and no molecule lists"
         missing = self.missing()
@@ -279,6 +318,20 @@ def compile_procedure(repo_root: str) -> ArtifactReport:
         if found:
             hits[kind] = found[:25]
 
+    # Disambiguate: the results-directory rule for PREDICTIONS also sweeps up
+    # split files that live under results/ (`results/lp_data_0/2004-04_train.csv`).
+    # A file is a split list first — reporting it as a raw prediction would make
+    # `metric_implementation_correct` look satisfiable when no predictions exist.
+    split_files = {loc.file for loc in hits.get(ArtifactKind.SPLIT_MOLECULE_LISTS, [])}
+    if split_files and ArtifactKind.PREDICTIONS in hits:
+        remaining = [
+            loc for loc in hits[ArtifactKind.PREDICTIONS] if loc.file not in split_files
+        ]
+        if remaining:
+            hits[ArtifactKind.PREDICTIONS] = remaining
+        else:
+            del hits[ArtifactKind.PREDICTIONS]
+
     for rel in files:
         norm = rel.replace(os.sep, "/")
         if _INFRA_RE.search(norm):
@@ -341,14 +394,38 @@ def compile_procedure(repo_root: str) -> ArtifactReport:
         findings=findings,
         scientific_path=sorted(scientific),
         infrastructure_path=sorted(infrastructure),
+        run_config=extract_run_config(repo_root),
     )
 
 
 def repo_summary(report: ArtifactReport) -> str:
-    """Compact repo description handed to the LLM extractor as context."""
+    """Compact repo description handed to the LLM extractor as context.
+
+    Includes the reproduce commands and declared split parameters, because a
+    model that can see `--config=config/uci.json` and `train_ratio: 0.5` will
+    ground the claim's split against what the code actually ran instead of
+    against what the paper says.
+    """
     parts = [f"root={os.path.basename(report.repo_root)}", report.summary()]
     for finding in report.findings:
         if finding.availability is Availability.PRESENT and finding.locations:
             files = ", ".join(loc.file for loc in finding.locations[:3])
             parts.append(f"{finding.kind.value}: {files}")
+
+    run = report.run_config
+    if run is not None:
+        if run.entry_points:
+            parts.append(f"entry_points: {', '.join(run.entry_points[:5])}")
+        for cmd in run.reproduce_commands[:6]:
+            parts.append(f"run[{cmd.kind}]: {cmd.command}")
+        split = run.declared_split()
+        if split:
+            parts.append(
+                "declared_split: " + ", ".join(f"{k}={v}" for k, v in list(split.items())[:8])
+            )
+        seeds = run.declared_seeds()
+        if seeds:
+            parts.append("declared_seeds: " + ", ".join(f"{k}={v}" for k, v in seeds.items()))
+        for flag, values in list(run.cli_choices.items())[:6]:
+            parts.append(f"cli_choices {flag}: {', '.join(values)}")
     return "\n".join(parts)
