@@ -20,8 +20,8 @@ import tempfile
 from dataclasses import dataclass
 
 from crucible.adjudicator import Observations, adjudicate
-from crucible.certificate import build_certificate
-from crucible.certificate.manifest import read_source
+from crucible.certificate import build_certificate, validate_replayable_source_snapshot
+from crucible.certificate.manifest import file_manifest, read_source
 from crucible.envmgr.manager import EnvironmentManager, LocalEnvironmentManager
 from crucible.executor.executor import RunResult, TransactionalExecutor
 from crucible.intake import Intake, ground_claims
@@ -74,19 +74,25 @@ def _find_metric(working_dir: str, produced: list[str], name: str) -> float | No
             data = json.load(open(os.path.join(working_dir, rel), encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        for obj in ([data] if isinstance(data, dict) else []):
+        for obj in [data] if isinstance(data, dict) else []:
             for k, v in obj.items():
                 if k.lower() == key and isinstance(v, (int, float)) and not isinstance(v, bool):
                     return float(v)
             for v in obj.values():  # one level of nesting
                 if isinstance(v, dict):
                     for k2, v2 in v.items():
-                        if k2.lower() == key and isinstance(v2, (int, float)) and not isinstance(v2, bool):
+                        if (
+                            k2.lower() == key
+                            and isinstance(v2, (int, float))
+                            and not isinstance(v2, bool)
+                        ):
                             return float(v2)
     return None
 
 
-def observe(spec: ExperimentSpec, run: RunResult, working_dir: str, initial: set[str]) -> Observations:
+def observe(
+    spec: ExperimentSpec, run: RunResult, working_dir: str, initial: set[str]
+) -> Observations:
     produced = _produced_files(working_dir, initial)
     controls: dict[str, float] = {}
     for pc in spec.positive_controls:
@@ -99,11 +105,14 @@ def observe(spec: ExperimentSpec, run: RunResult, working_dir: str, initial: set
 
     series: dict[str, list[float]] = {}
     for claim in spec.claims_under_test:
-        for var in claim.reported_values or {claim.metric: None}:
+        variables = claim.reported_values.keys() if claim.reported_values else (claim.metric,)
+        for var in variables:
             if var == "output_artifact_produced":
                 series[var] = [1.0 if produced else 0.0]
             else:
-                v = _find_metric(working_dir, produced, var) or _find_metric(working_dir, produced, claim.metric)
+                v = _find_metric(working_dir, produced, var) or _find_metric(
+                    working_dir, produced, claim.metric
+                )
                 if v is not None:
                     series[var] = [v]
     return Observations(claim_series=series, control_values=controls)
@@ -144,18 +153,22 @@ def run_pipeline(
 
     envmgr = envmgr or LocalEnvironmentManager()
     env = envmgr.provision()
-    _seed_repo(repo_dir, env.working_dir)
-    source_files = read_source(env.working_dir)
-
-    runner = runner or LocalSubprocessRunner()
-    executor = TransactionalExecutor(
-        envmgr=envmgr, runner=runner, recorder=recorder, env=env, recovery=recovery
-    )
     try:
+        _seed_repo(repo_dir, env.working_dir)
+        source_files = read_source(env.working_dir)
+        source_checksums = file_manifest(env.working_dir)
+        # Stage 0 replays inputs from inlined UTF-8 text. Reject a binary or otherwise
+        # non-round-trippable input before any scientific action can run.
+        validate_replayable_source_snapshot(source_files, source_checksums)
+
+        runner = runner or LocalSubprocessRunner()
+        executor = TransactionalExecutor(
+            envmgr=envmgr, runner=runner, recorder=recorder, env=env, recovery=recovery
+        )
         run = executor.execute(plan, spec, trace_id=trace_id)  # shares the trace above
 
         claim_id = spec.claims_under_test[0].claim_id if spec.claims_under_test else "c1"
-        observations = observe(spec, run, env.working_dir, set(source_files))
+        observations = observe(spec, run, env.working_dir, set(source_checksums))
         verdict = adjudicate(spec, run, claim_id, observations)
 
         certificate = build_certificate(
@@ -164,9 +177,12 @@ def run_pipeline(
             run_result=run,
             working_dir=env.working_dir,
             source_files=source_files,
+            source_checksums=source_checksums,
             verdict=verdict,
         )
-        return PipelineResult(spec=spec, plan=plan, run=run, verdict=verdict, certificate=certificate)
+        return PipelineResult(
+            spec=spec, plan=plan, run=run, verdict=verdict, certificate=certificate
+        )
     finally:
         teardown = getattr(envmgr, "teardown", None)
         if teardown is not None:

@@ -88,7 +88,10 @@ repo ──────┘   (extract claims,    (claims,      (LLM proposes,   
   exfiltration, budget). Findings carry **severity**; **waivers** override with a
   recorded justification; the full record is written to the trace and certificate.
 - **Executor** (`crucible/executor/`) — transactional per-step lifecycle with
-  checkpoints; validates every plan before any side effect.
+  checkpoints; validates every plan before any side effect. Scientific workload
+  steps and their recovery commands cross a separate monitored-runner boundary;
+  every consistency-checked command envelope is retained on the step, in the
+  SQLite trace, and in the certificate.
 - **Verifiers** (`crucible/verifiers/`) — hard verifier catalog with typed
   arg-schemas (`exit_code_zero`, `file_exists`, `imports_resolvable`).
 - **Reproducibility** (`crucible/certificate/`) — build/save/load certificates,
@@ -111,6 +114,18 @@ The two development-only controlled provenance tasks are under
 [`benchmarks/provenance/pilot/`](benchmarks/provenance/pilot/README.md). They include frozen
 contracts, initial manifests, trusted construction labels, and a fixture self-check; they are
 excluded from confirmatory paper results.
+
+The current `crucible-command-envelope-v1` records the submitted command,
+decoded-output digests, outcome, timing, and pre/post regular-file SHA-256
+snapshots. Because v1 cannot prove process-tree quiescence, its post-command
+snapshot is retained but marked incomplete even after a normal top-level exit.
+It explicitly marks process identity/parentage, reads, write episodes,
+and renames as unsupported. The configured `MonitoredRunner` is explicitly part
+of the harness trusted computing base; envelope checks detect inconsistent
+responses but do not authenticate a malicious runner implementation.
+Consequently this is an integration and retention layer—not causal
+provenance—and certificates mark provenance adjudication as `not_performed`
+until the Linux event collector and evidence gate are added.
 
 ## Install
 
@@ -160,7 +175,7 @@ false-verdict / decisiveness / correctness table.
 
 Implemented and tested end-to-end: **paper/repo → claims (+ acceptance policy +
 artifact report) → intake (extract + ground) → plan → validate → execute →
-verify → adjudicate → certify → replay → benchmark**, 184 passing tests. Runs
+verify → adjudicate → certify → replay → benchmark**, 255 passing tests. Runs
 self-contained local repos on a subprocess runner.
 
 Docker isolation is implemented (persistent container + bind-mount workspace, CPU

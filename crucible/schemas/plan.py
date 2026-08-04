@@ -8,7 +8,7 @@ from the LLM.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .enums import PathClass, RollbackKind
 from .ontology import StepType
@@ -27,12 +27,12 @@ class Rollback(BaseModel):
 
 
 class StepBudget(BaseModel):
-    timeout_s: int = 1800
-    retries: int = 2
+    timeout_s: int = Field(default=1800, gt=0)
+    retries: int = Field(default=2, ge=0)
 
 
 class Step(BaseModel):
-    step_id: str
+    step_id: str = Field(min_length=1)
     type: StepType
     preconditions: list[str] = Field(
         default_factory=list, description="Predicate expressions checked by the harness."
@@ -53,6 +53,14 @@ class Step(BaseModel):
 
 
 class ExecutionPlan(BaseModel):
-    experiment_id: str
+    experiment_id: str = Field(min_length=1)
     ontology_version: str = "v1"
     steps: list[Step] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _step_ids_are_unique(self) -> ExecutionPlan:
+        step_ids = [step.step_id for step in self.steps]
+        duplicates = sorted({step_id for step_id in step_ids if step_ids.count(step_id) > 1})
+        if duplicates:
+            raise ValueError(f"step_id values must be unique: {duplicates}")
+        return self

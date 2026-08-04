@@ -8,7 +8,7 @@ from crucible.certificate import (
     default_policy,
     replay_certificate,
 )
-from crucible.certificate.manifest import read_source
+from crucible.certificate.manifest import file_manifest, read_source
 from crucible.certificate.policy import Classification
 from crucible.schemas import (
     ArtifactRule,
@@ -96,6 +96,7 @@ def test_exempted_log_still_reproduces(tmp_path) -> None:
     executor, plan = build_executor(db_path=str(tmp_path / "orig.sqlite"))
     inject(plan)
     source = read_source(executor._env.working_dir)
+    source_checksums = file_manifest(executor._env.working_dir)
     result = executor.execute(plan)
     cert = build_certificate(
         spec=build_demo_spec(),
@@ -103,7 +104,10 @@ def test_exempted_log_still_reproduces(tmp_path) -> None:
         run_result=result,
         working_dir=executor._env.working_dir,
         source_files=source,
-        verdict=Verdict(experiment_id=plan.experiment_id, claim_id="c1", status=VerdictStatus.SUCCESS),
+        source_checksums=source_checksums,
+        verdict=Verdict(
+            experiment_id=plan.experiment_id, claim_id="c1", status=VerdictStatus.SUCCESS
+        ),
         policy=default_policy(),  # exempts *.log
     )
 

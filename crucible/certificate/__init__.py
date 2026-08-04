@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from .builder import build_certificate, load_certificate, save_certificate
+from .builder import (
+    build_certificate,
+    load_certificate,
+    save_certificate,
+    validate_replayable_source_snapshot,
+)
 from .manifest import file_manifest, read_paths, read_source, sha256_file
 from .policy import (
     ArtifactJudgement,
@@ -30,4 +35,5 @@ __all__ = [
     "replay_certificate",
     "save_certificate",
     "sha256_file",
+    "validate_replayable_source_snapshot",
 ]

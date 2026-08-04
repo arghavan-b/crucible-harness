@@ -16,7 +16,7 @@ import json
 
 from crucible.adjudicator import Observations, adjudicate
 from crucible.certificate import build_certificate, replay_certificate
-from crucible.certificate.manifest import read_source
+from crucible.certificate.manifest import file_manifest, read_source
 from crucible.envmgr.manager import LocalEnvironmentManager
 from crucible.executor.executor import RunResult, TransactionalExecutor
 from crucible.runners.base import LocalSubprocessRunner
@@ -33,18 +33,16 @@ from crucible.schemas import (
     Step,
     StepType,
     Tolerance,
-    Verdict,
-    VerdictStatus,
 )
 from crucible.trace.recorder import SQLiteTraceRecorder
 
-INFERENCE_PY = '''\
+INFERENCE_PY = """\
 import json
 preds = [{"label": "cat", "score": 0.98}, {"label": "dog", "score": 0.02}]
 with open("predictions.json", "w") as f:
     json.dump(preds, f)
 print("wrote predictions.json with", len(preds), "predictions")
-'''
+"""
 
 
 def build_demo_spec() -> ExperimentSpec:
@@ -127,6 +125,7 @@ def certify() -> ReproducibilityCertificate:
     """Run the demo and assemble a self-contained reproducibility certificate."""
     executor, plan = build_executor(db_path=os.path.join(tempfile.mkdtemp(), "demo.sqlite"))
     source_files = read_source(executor._env.working_dir)  # capture inputs BEFORE running
+    source_checksums = file_manifest(executor._env.working_dir)
     result: RunResult = executor.execute(plan)
 
     # Extract the observed metric from the produced artifact and adjudicate.
@@ -143,6 +142,7 @@ def certify() -> ReproducibilityCertificate:
         run_result=result,
         working_dir=executor._env.working_dir,
         source_files=source_files,
+        source_checksums=source_checksums,
         verdict=verdict,
     )
 
@@ -165,10 +165,14 @@ def main() -> None:
     # Reproducibility: certify this run, then replay it from the certificate.
     print("\n=== REPRODUCIBILITY ===")
     cert = certify()
-    print(f"verdict:     {cert.verdict.status.value} "
-          f"(confidence {cert.verdict.confidence:.2f}) — {cert.verdict.evidence.result.conclusion}")
-    print(f"certificate: {len(cert.source_files)} source file(s), "
-          f"{len(cert.artifact_manifest)} artifact(s) hashed")
+    print(
+        f"verdict:     {cert.verdict.status.value} "
+        f"(confidence {cert.verdict.confidence:.2f}) — {cert.verdict.evidence.result.conclusion}"
+    )
+    print(
+        f"certificate: {len(cert.source_files)} source file(s), "
+        f"{len(cert.artifact_manifest)} artifact(s) hashed"
+    )
     report = replay_certificate(cert)
     print(f"replay trace: {report.replay_trace_id}")
     print(report.summary())

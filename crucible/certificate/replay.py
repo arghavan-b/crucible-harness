@@ -34,10 +34,10 @@ class ReplayReport:
     original_trace_id: str
     replay_trace_id: str
     execution_succeeded: bool
-    matched: list[str] = field(default_factory=list)                 # byte-identical
+    matched: list[str] = field(default_factory=list)  # byte-identical
     expected_divergence: list[ArtifactJudgement] = field(default_factory=list)
     unexpected_divergence: list[ArtifactJudgement] = field(default_factory=list)
-    missing: list[str] = field(default_factory=list)                 # certified but not produced
+    missing: list[str] = field(default_factory=list)  # certified but not produced
     unexpected_artifacts: list[ArtifactJudgement] = field(default_factory=list)
 
     @property
@@ -51,7 +51,11 @@ class ReplayReport:
 
     def summary(self) -> str:
         if self.reproduced:
-            extra = f" ({len(self.expected_divergence)} expected divergence)" if self.expected_divergence else ""
+            extra = (
+                f" ({len(self.expected_divergence)} expected divergence)"
+                if self.expected_divergence
+                else ""
+            )
             return f"REPRODUCED — {len(self.matched)} artifact(s) byte-identical{extra}."
         reasons: list[str] = []
         if not self.execution_succeeded:
@@ -94,14 +98,28 @@ def replay_certificate(
     executor = TransactionalExecutor(envmgr=envmgr, runner=runner, recorder=recorder, env=env)
     run = executor.execute(cert.plan)
 
-    produced = file_manifest(env.working_dir, exclude=frozenset(cert.source_files))
+    final_manifest = file_manifest(env.working_dir)
+    initial_checksums = cert.pinned_inputs.dataset_checksums
+    produced = (
+        {
+            path: digest
+            for path, digest in final_manifest.items()
+            if initial_checksums.get(path) != digest
+        }
+        if initial_checksums
+        else {
+            path: digest for path, digest in final_manifest.items() if path not in cert.source_files
+        }
+    )
     expected = cert.artifact_manifest
     replay_contents = read_paths(env.working_dir, frozenset(produced))
 
     matched: list[str] = []
     expected_div: list[ArtifactJudgement] = []
     unexpected_div: list[ArtifactJudgement] = []
-    missing: list[str] = []
+    missing: list[str] = [
+        f"pinned_input:{path}" for path in sorted(set(initial_checksums) - set(cert.source_files))
+    ]
 
     for path, digest in expected.items():
         if path not in produced:

@@ -9,7 +9,11 @@ trustable by third parties.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+from crucible.trace.capture import MonitoredCommandEnvelope, RunCaptureSummary
 
 from .plan import ExecutionPlan
 from .policy import NondeterminismPolicy
@@ -30,6 +34,21 @@ class ReproducibilityCertificate(BaseModel):
     container_digest: str
     pinned_inputs: PinnedInputs = Field(default_factory=PinnedInputs)
     trace_id: str
+    command_captures: list[MonitoredCommandEnvelope] = Field(
+        default_factory=list,
+        description="Monitored scientific-action and recovery envelopes retained from execution.",
+    )
+    capture_summary: RunCaptureSummary | None = Field(
+        default=None,
+        description="Aggregate coverage of command-capture facets; not an admissibility decision.",
+    )
+    provenance_adjudication: Literal["not_performed"] = Field(
+        default="not_performed",
+        description=(
+            "The legacy scientific verdict has not yet been gated on causal provenance; "
+            "command capture alone is not an admissibility decision."
+        ),
+    )
     verdict: Verdict
     validation: ValidationRecord | None = Field(
         default=None, description="What the plan-validation gates checked, failed, and waived."
