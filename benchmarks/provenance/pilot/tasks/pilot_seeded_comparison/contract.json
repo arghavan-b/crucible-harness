@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "task_id": "pilot_seeded_comparison",
+  "pilot_only": true,
+  "confirmatory_exclusion": "Development-only instrumentation task; permanently excluded from confirmatory and headline results.",
+  "family": "multi_stage_comparative",
+  "description": "Prepare per-seed paired improvements in one child process, then summarize the scientific result and calibration control in another.",
+  "required_command": [
+    "{python}",
+    "run_pipeline.py"
+  ],
+  "declared_inputs": [
+    {
+      "path": "inputs/scores.csv",
+      "sha256": "02231c16e2d1221543d3011c9c93609e6a41eb1cebe804000b4dfc61e08de121",
+      "role": "paired per-seed scores"
+    },
+    {
+      "path": "inputs/calibration.csv",
+      "sha256": "a4e84b5e112c6462eb6fb96a0d900cd3cb877651e23af47d2d8d757748043834",
+      "role": "positive-control predictions"
+    }
+  ],
+  "condition_inputs": {
+    "negative_science": [
+      {
+        "path": "conditions/negative_scores.csv",
+        "sha256": "aa4bdb7679da466e61b5d9af2ad80d67ae1c3697783d377c18ef3be4706d47bd",
+        "role": "declared negative-result condition"
+      }
+    ],
+    "failed_control": [
+      {
+        "path": "conditions/failing_calibration.csv",
+        "sha256": "1dca03ec0c780bf5510bfc8d041135ee9123ccd1c02ca8570a70fe34a8fcc2ab",
+        "role": "declared failed-control condition"
+      }
+    ]
+  },
+  "condition_commands": {
+    "negative_science": [
+      "{python}",
+      "run_pipeline.py",
+      "--scores",
+      "conditions/negative_scores.csv"
+    ],
+    "failed_control": [
+      "{python}",
+      "run_pipeline.py",
+      "--calibration",
+      "conditions/failing_calibration.csv"
+    ]
+  },
+  "forbidden_ancestors": [
+    {
+      "path": "preexisting/cached_result.json",
+      "sha256": "abda0218a0075058a79850145e8c4af6178de154160b0380f06804993699a7e7",
+      "role": "pre-existing answer-bearing result"
+    },
+    {
+      "path": "preexisting/cached_summary.csv",
+      "sha256": "11e023aef74367ecf959d9039b6c8c7734600672792093a216e1709875f8fc40",
+      "role": "pre-existing answer-bearing table"
+    },
+    {
+      "path": "undeclared/scores.csv",
+      "sha256": "eb6d0c39ce53c636e790c273259d6d42729d5213e79a3facc0706dc05bc885e4",
+      "role": "undeclared alternate data"
+    }
+  ],
+  "required_outputs": [
+    {
+      "path": "outputs/result.json",
+      "media_type": "application/json"
+    },
+    {
+      "path": "outputs/summary.csv",
+      "media_type": "text/csv",
+      "min_bytes": 1,
+      "csv_columns": [
+        "metric",
+        "value"
+      ],
+      "csv_key_column": "metric",
+      "mirrors_result_fields": [
+        "calibration_accuracy",
+        "mean_delta_pp",
+        "n_calibration",
+        "n_seeds",
+        "positive_control_passed"
+      ]
+    }
+  ],
+  "result_schema": {
+    "task_id": "pilot_seeded_comparison",
+    "numeric_fields": [
+      "mean_delta_pp",
+      "calibration_accuracy"
+    ],
+    "integer_fields": {
+      "n_calibration": 4,
+      "n_seeds": 4
+    },
+    "boolean_fields": [
+      "positive_control_passed"
+    ],
+    "literal_fields": {
+      "schema_version": 1
+    },
+    "allow_additional_fields": false
+  },
+  "measurement": {
+    "artifact_path": "outputs/result.json",
+    "extractor_id": "pilot-json-v1",
+    "metric": "mean_delta_pp",
+    "operator": ">=",
+    "threshold": 10.0,
+    "tolerance": 0.0
+  },
+  "positive_control": {
+    "artifact_path": "outputs/result.json",
+    "extractor_id": "pilot-json-v1",
+    "metric": "calibration_accuracy",
+    "expected": 1.0,
+    "tolerance": 0.0,
+    "reported_pass_field": "positive_control_passed"
+  },
+  "runtime": {
+    "python": ">=3.12",
+    "network": "none",
+    "monitor_platform": "linux",
+    "timeout_s": 30
+  },
+  "allowed_repairs": [
+    {
+      "repair_id": "create_work_output_directories",
+      "kind": "environment",
+      "description": "Create the work and outputs directories without changing scientific code or inputs.",
+      "allowed_paths": [
+        "work",
+        "outputs"
+      ],
+      "command": [
+        "{python}",
+        "-c",
+        "from pathlib import Path; import subprocess,sys; Path('work').mkdir(parents=True, exist_ok=True); Path('outputs').mkdir(parents=True, exist_ok=True); subprocess.run([sys.executable,'run_pipeline.py'],check=True)"
+      ]
+    }
+  ],
+  "allowed_scientific_variants": [
+    {
+      "variant_id": "alternative_preparation_stage",
+      "description": "Use the allowlisted equivalent preparation stage.",
+      "command": [
+        "{python}",
+        "run_alternative.py"
+      ]
+    }
+  ]
+}

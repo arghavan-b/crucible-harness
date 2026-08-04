@@ -107,6 +107,11 @@ Paper-analysis tooling includes a pinned CORE-Bench public-log downloader and
 annotation-to-public-ID bridge. See [`data/corebench/README.md`](data/corebench/README.md)
 for provenance, reproduction commands, and redistribution caveats.
 
+The two development-only controlled provenance tasks are under
+[`benchmarks/provenance/pilot/`](benchmarks/provenance/pilot/README.md). They include frozen
+contracts, initial manifests, trusted construction labels, and a fixture self-check; they are
+excluded from confirmatory paper results.
+
 ## Install
 
 ```bash

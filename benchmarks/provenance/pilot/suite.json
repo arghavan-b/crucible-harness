@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "suite_id": "crucible-provenance-pilot-v1",
+  "development_only": true,
+  "confirmatory_excluded": true,
+  "task_ids": [
+    "pilot_weighted_mean",
+    "pilot_seeded_comparison"
+  ],
+  "strategy_ids": [
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "I1",
+    "I2",
+    "I3",
+    "I4",
+    "I5",
+    "I6"
+  ],
+  "pinned_files": {
+    "tasks/pilot_weighted_mean/contract.json": "81bcf32c7ab8daba4028c28fe69060e14dc14c1a609e5a1a912356be4ac1f97f",
+    "tasks/pilot_weighted_mean/initial_manifest.json": "20051fa034bacacaa8f2832612abbf8b183f9adc61e5bde37460ec263cfc5c6f",
+    "tasks/pilot_seeded_comparison/contract.json": "9c6551c28696ecb8474d83bc624908ba6ba65c27d192006b1367dc95193453ff",
+    "tasks/pilot_seeded_comparison/initial_manifest.json": "a0c266119f62db9fee7f064c7c5c77d6cde699c179696b1415d98f61ac7338d7",
+    "trusted/oracles.json": "f6c5717f5c4b55d556c206f158b5fed5126ff87ee70aed16c86ff2eff802fd0a"
+  }
+}

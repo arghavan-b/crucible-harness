@@ -1,0 +1,6 @@
+metric,value
+calibration_accuracy,1
+mean_delta_pp,11
+n_calibration,4
+n_seeds,4
+positive_control_passed,true

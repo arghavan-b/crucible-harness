@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "task_id": "pilot_weighted_mean",
+  "hash_algorithm": "sha256",
+  "directories": [
+    "conditions",
+    "inputs",
+    "preexisting",
+    "reported",
+    "undeclared"
+  ],
+  "files": {
+    "README.md": "52d7c527a90db0a1c5d0f7b8ac4fc55b4e0b339e9177e9d7f6cdc93dce21dfa4",
+    "conditions/failing_calibration.csv": "ca7d62e6ea12dedaf36204dfe20be5abb76b53dfc74949b888801cb4ca6ee7cc",
+    "conditions/negative_observations.csv": "b42e73aaa071e4861d53b0dcaf34dc882a8aaf136f0b467de080f0518b0742f8",
+    "inputs/calibration.csv": "fb6666fdd244da05bf060509127b466d47304ef2c73da9eb97d41c626ab59ef6",
+    "inputs/observations.csv": "971a634a5b56b40767175a2dcfb8206bf371b71076cc7f5f2fe49c666191a163",
+    "pipeline.py": "93009975c1499fd06eb1c350eaf67fd534e4672010dd5e982e5565f102c33d0b",
+    "preexisting/cached_result.json": "b648b6751fa447fd46cb464f0c81e0a5c0a0488c69b8abd1c264beef5ad47d68",
+    "reported/ANSWER.md": "e274b518474c7b023cdb09083860853a0a00a66284a5cecb26bf6d6c7eae3b93",
+    "streaming_pipeline.py": "dbd0f99c90df548e1b06353f688cfa23059f5c40a03523d09f50c1ff4ef1b2b6",
+    "undeclared/observations.csv": "516ccb165023e6ba9a8356ad6d016bbca4bb0797dcd497364d977fd5168330ef"
+  }
+}

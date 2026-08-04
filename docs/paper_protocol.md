@@ -131,7 +131,7 @@ The paper will use three distinct components. Their roles must not be conflated.
 | B. Historical CORE-Bench trajectories | Secondary external validity and taxonomy | 390 annotated trajectories; 60 manually reviewed | Independent human review subset |
 | C. Fresh instrumented CORE-Bench runs | Prospective realism check | Target 12 capsules x 3 repetitions = 36 runs | Task contract plus independent trace review |
 
-Two additional controlled tasks will be used only for instrumentation development. They are excluded from all confirmatory results.
+Two additional controlled tasks will be used only for instrumentation development. They are excluded from all confirmatory results. Their frozen IDs are `pilot_weighted_mean` (direct deterministic scalar computation with a byte-identical cached overwrite) and `pilot_seeded_comparison` (a two-child-process comparative pipeline with an intermediate artifact). Their contracts, initial manifests, and construction labels live under `benchmarks/provenance/pilot/`; only each task's `repo/` directory enters the evaluated workspace.
 
 ## 6. Component A: controlled provenance challenge suite
 

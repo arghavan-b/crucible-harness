@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "task_id": "pilot_seeded_comparison",
+  "hash_algorithm": "sha256",
+  "directories": [
+    "conditions",
+    "inputs",
+    "preexisting",
+    "reported",
+    "undeclared"
+  ],
+  "files": {
+    "README.md": "8060a691794fbb89149827bbcf64d17154b63197c9859b48677da166d56a0a87",
+    "conditions/failing_calibration.csv": "1dca03ec0c780bf5510bfc8d041135ee9123ccd1c02ca8570a70fe34a8fcc2ab",
+    "conditions/negative_scores.csv": "aa4bdb7679da466e61b5d9af2ad80d67ae1c3697783d377c18ef3be4706d47bd",
+    "inputs/calibration.csv": "a4e84b5e112c6462eb6fb96a0d900cd3cb877651e23af47d2d8d757748043834",
+    "inputs/scores.csv": "02231c16e2d1221543d3011c9c93609e6a41eb1cebe804000b4dfc61e08de121",
+    "preexisting/cached_result.json": "abda0218a0075058a79850145e8c4af6178de154160b0380f06804993699a7e7",
+    "preexisting/cached_summary.csv": "11e023aef74367ecf959d9039b6c8c7734600672792093a216e1709875f8fc40",
+    "prepare.py": "21eab31cbfdc127f93a1cbf874a922a75f2a020e91dc82172fd2e284832b6deb",
+    "prepare_alternative.py": "46d988d088ad86d8b68640bb3f6d8a1ca588126dee5341a620a20344bc688eab",
+    "reported/ANSWER.md": "28bdd0f5a0cf59f1d4eedb806a151019590de8b5f66eee7881c580a389baa6dc",
+    "run_alternative.py": "6b6d50dfb89237cc098044454197c304637b316fa23f999b0ef8721c3bbcb708",
+    "run_pipeline.py": "e8c414dafa27632a9c0f16f92cff29c87df03ff9dfed0640c4f03624769e0849",
+    "summarize.py": "e2a9ce879b9fb3981eda156f748445148772ff2db40304fbe212d01f335eb07d",
+    "undeclared/scores.csv": "eb6d0c39ce53c636e790c273259d6d42729d5213e79a3facc0706dc05bc885e4"
+  }
+}
