@@ -115,17 +115,25 @@ The two development-only controlled provenance tasks are under
 contracts, initial manifests, trusted construction labels, and a fixture self-check; they are
 excluded from confirmatory paper results.
 
-The current `crucible-command-envelope-v1` records the submitted command,
-decoded-output digests, outcome, timing, and pre/post regular-file SHA-256
-snapshots. Because v1 cannot prove process-tree quiescence, its post-command
-snapshot is retained but marked incomplete even after a normal top-level exit.
-It explicitly marks process identity/parentage, reads, write episodes,
-and renames as unsupported. The configured `MonitoredRunner` is explicitly part
-of the harness trusted computing base; envelope checks detect inconsistent
-responses but do not authenticate a malicious runner implementation.
-Consequently this is an integration and retention layer—not causal
-provenance—and certificates mark provenance adjudication as `not_performed`
-until the Linux event collector and evidence gate are added.
+Two collectors implement the same monitored-runner interface:
+
+- `crucible-command-envelope-v1` records the command, decoded-output digests,
+  outcome, timing, and pre/post regular-file SHA-256 snapshots. It cannot prove
+  process-tree quiescence, so snapshots remain incomplete and causal facets are
+  explicitly unsupported.
+- `crucible-linux-strace-v1` follows the Linux process tree with `strace -ff`,
+  retains normalized exec/spawn/exit and file read/write/rename events, hashes
+  every raw per-PID trace, and marks normal, losslessly parsed collections as
+  causally captured. Timeouts, undecodable lines, `io_uring`, and other parser
+  uncertainty downgrade causal facets to `incomplete`.
+
+Both the configured `MonitoredRunner` and `strace` are part of the harness
+trusted computing base. The Linux profile covers the successful syscalls named
+in its retained `syscall_filter`; it is not a claim about unobserved kernel,
+network, or hardware activity. Certificates still mark provenance adjudication
+as `not_performed`: the event evidence is now available, but the policy gate that
+decides whether those events make a scientific result admissible remains the
+next increment.
 
 ## Install
 
@@ -156,6 +164,9 @@ crucible plan ./repo
 # Full pipeline: intake ▸ plan ▸ validate ▸ execute ▸ adjudicate ▸ verdict + certificate.
 crucible submit ./repo --out cert.json
 
+# Linux host: retain causal process and filesystem events for scientific steps.
+crucible submit ./repo --runner linux-strace --out cert.json
+
 # Reproduce a run byte-for-byte from its certificate (exit 0 iff reproduced).
 crucible replay cert.json
 
@@ -175,7 +186,7 @@ false-verdict / decisiveness / correctness table.
 
 Implemented and tested end-to-end: **paper/repo → claims (+ acceptance policy +
 artifact report) → intake (extract + ground) → plan → validate → execute →
-verify → adjudicate → certify → replay → benchmark**, 255 passing tests. Runs
+verify → adjudicate → certify → replay → benchmark**, 263 passing tests. Runs
 self-contained local repos on a subprocess runner.
 
 Docker isolation is implemented (persistent container + bind-mount workspace, CPU
@@ -185,7 +196,7 @@ Stage-1 recovery/diagnosis, `docker commit` checkpointing, and Postgres/S3 stora
 ## Develop
 
 ```bash
-uv run pytest -q             # 184 tests
+uv run pytest -q             # 263 tests
 uv run python -m examples.demo_local        # end-to-end: run ▸ verify ▸ adjudicate ▸ certify ▸ replay
 uv run python -m examples.score_extraction  # scored claim/config extraction vs a real answer key
 ```
@@ -218,6 +229,12 @@ macOS runs the CPU path fine; GPU passthrough (`--gpus`) requires a Linux host �
 use a cloud GPU box for CUDA experiments. Docker integration tests live in
 `tests/test_docker.py` and skip automatically when no daemon is present.
 
+`--runner linux-strace` is a host-subprocess backend, not Docker isolation. It
+requires Linux plus `strace` 6.6 or newer, with `-ff`, `-yy`, and
+`--kill-on-exit`. Raw trace files are normalized and deleted after their SHA-256
+digests and typed events are retained in the trace and certificate. Run the
+collector inside an isolated Linux VM when the evaluated workload is untrusted.
+
 Still a refinement, not yet done: `docker commit`-based checkpointing (so
 rollback also undoes dependency installs) and an allowlist egress proxy (so the
 `network_allowlist` gate becomes a live boundary rather than default-deny-all).
@@ -233,10 +250,10 @@ crucible/
   validation/     plan-validation gates, predicate grammar, dataflow
   executor/       transactional executor + state machine
   verifiers/      hard verifier catalog (arg-schemas)
-  trace/          SQLite trace recorder
+  trace/          SQLite trace recorder + command/Linux event evidence
   adjudicator/    verdict decision procedure + stats
   certificate/    reproducibility certificates, replay, nondeterminism policy
-  runners/        subprocess + docker runners
+  runners/        subprocess + Linux strace + docker runners
   envmgr/         local + docker environment managers
   pipeline.py     end-to-end submit orchestration
   benchmarks/     CORE-Bench tasks + harness-on/off arms

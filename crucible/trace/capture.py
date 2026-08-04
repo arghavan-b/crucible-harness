@@ -1,11 +1,10 @@
-"""Typed capture envelopes for monitored scientific and recovery command submissions.
+"""Typed evidence envelopes for monitored scientific and recovery commands.
 
-The v1 envelope improves auditability without pretending that snapshots prove
-causal provenance. It captures the runner call, decoded stdio digests, and
-regular-file hashes immediately before and after the call. Process identities,
-parentage, file reads, write episodes, and renames remain explicitly unsupported
-until a Linux event collector supplies them. Because top-level exit does not
-establish process-tree quiescence, v1 post-command snapshots remain incomplete.
+The command-envelope collector records the runner call and pre/post file hashes,
+but makes no causal provenance claim. The Linux strace collector uses the same
+interface and additionally retains process-tree and file-system syscall events.
+Every collector reports facet completeness explicitly; partial traces never get
+silently promoted to complete provenance.
 """
 
 from __future__ import annotations
@@ -89,7 +88,7 @@ class CaptureFacet(str, Enum):
 
 
 ALL_CAPTURE_FACETS = frozenset(CaptureFacet)
-_V1_UNSUPPORTED_FACETS = frozenset(
+CAUSAL_CAPTURE_FACETS = frozenset(
     {
         CaptureFacet.PROCESS_IDENTITIES,
         CaptureFacet.PROCESS_PARENTAGE,
@@ -204,11 +203,186 @@ class CapturedCommandResult(_StrictCaptureModel):
         return self
 
 
+LinuxProcessOperation = Literal["exec", "spawn", "exit"]
+LinuxFileOperation = Literal[
+    "open_read",
+    "open_write",
+    "read",
+    "write",
+    "mmap_read",
+    "mmap_write",
+    "metadata_read",
+    "metadata_write",
+    "directory_read",
+    "namespace_write",
+    "rename",
+    "unlink",
+    "truncate",
+]
+
+
+class LinuxProcessEvent(_StrictCaptureModel):
+    """One observed process-tree transition from a Linux strace trace."""
+
+    sequence: StrictInt = Field(ge=0)
+    timestamp_s: float = Field(ge=0.0)
+    pid: StrictInt = Field(gt=0)
+    operation: LinuxProcessOperation
+    child_pid: StrictInt | None = Field(default=None, gt=0)
+    executable: str | None = None
+    exit_code: StrictInt | None = None
+    signal: str | None = None
+
+    @model_validator(mode="after")
+    def _operation_fields_are_consistent(self) -> LinuxProcessEvent:
+        if self.operation == "exec":
+            if not self.executable or any(
+                value is not None for value in (self.child_pid, self.exit_code, self.signal)
+            ):
+                raise ValueError("exec events require only an executable")
+        elif self.operation == "spawn":
+            if self.child_pid is None or any(
+                value is not None for value in (self.executable, self.exit_code, self.signal)
+            ):
+                raise ValueError("spawn events require only a child_pid")
+        elif self.child_pid is not None or self.executable is not None:
+            raise ValueError("exit events cannot carry spawn or executable fields")
+        elif (self.exit_code is None) == (self.signal is None):
+            raise ValueError("exit events require exactly one of exit_code or signal")
+        if self.executable is not None and not PurePosixPath(self.executable).is_absolute():
+            raise ValueError("exec event paths must be absolute")
+        return self
+
+
+class LinuxFileEvent(_StrictCaptureModel):
+    """One observed file access or mutation, attributed to a traced Linux PID."""
+
+    sequence: StrictInt = Field(ge=0)
+    timestamp_s: float = Field(ge=0.0)
+    pid: StrictInt = Field(gt=0)
+    operation: LinuxFileOperation
+    path: str = Field(min_length=1)
+    target_path: str | None = None
+    workspace_path: str | None = None
+    target_workspace_path: str | None = None
+    bytes_transferred: StrictInt | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _paths_match_operation(self) -> LinuxFileEvent:
+        if "\x00" in self.path or (self.target_path is not None and "\x00" in self.target_path):
+            raise ValueError("file-event paths cannot contain NUL")
+        if not PurePosixPath(self.path.removesuffix(" (deleted)")).is_absolute():
+            raise ValueError("file-event paths must be absolute")
+        if (
+            self.target_path is not None
+            and not PurePosixPath(self.target_path.removesuffix(" (deleted)")).is_absolute()
+        ):
+            raise ValueError("file-event target paths must be absolute")
+        if self.operation == "rename":
+            if self.target_path is None:
+                raise ValueError("rename events require a target_path")
+        elif self.target_path is not None or self.target_workspace_path is not None:
+            raise ValueError("only rename events can carry a target path")
+        for relative in (self.workspace_path, self.target_workspace_path):
+            if relative is None:
+                continue
+            pure = PurePosixPath(relative)
+            if (
+                not relative
+                or relative == "."
+                or "\\" in relative
+                or pure.is_absolute()
+                or ".." in pure.parts
+            ):
+                raise ValueError(f"unsafe workspace-relative event path {relative!r}")
+        return self
+
+
+class LinuxEventTrace(_StrictCaptureModel):
+    """Normalized, integrity-pinned output from one Linux strace collection."""
+
+    backend: Literal["strace"] = "strace"
+    profile: Literal["crucible-linux-strace-v1"] = "crucible-linux-strace-v1"
+    strace_version: str = Field(min_length=1)
+    syscall_filter: tuple[str, ...]
+    root_pid: StrictInt = Field(gt=0)
+    process_ids: tuple[StrictInt, ...]
+    process_events: tuple[LinuxProcessEvent, ...]
+    file_events: tuple[LinuxFileEvent, ...]
+    raw_trace_sha256: Mapping[str, str]
+    collection_complete: StrictBool
+    issues: tuple[str, ...] = ()
+
+    @field_validator("raw_trace_sha256", mode="after")
+    @classmethod
+    def _freeze_trace_digests(cls, value: Mapping[str, str]) -> Mapping[str, str]:
+        return _freeze_mapping(value)
+
+    @field_serializer("raw_trace_sha256")
+    def _serialize_trace_digests(self, value: Mapping[str, str]) -> dict[str, str]:
+        return dict(value)
+
+    @model_validator(mode="after")
+    def _trace_is_consistent(self) -> LinuxEventTrace:
+        if not self.process_ids or tuple(sorted(set(self.process_ids))) != self.process_ids:
+            raise ValueError("process_ids must be non-empty, unique, and sorted")
+        if self.root_pid not in self.process_ids:
+            raise ValueError("root_pid must be present in process_ids")
+        known = set(self.process_ids)
+        if any(event.pid not in known for event in self.process_events) or any(
+            event.pid not in known for event in self.file_events
+        ):
+            raise ValueError("every event PID must be listed in process_ids")
+        if any(
+            event.child_pid is not None and event.child_pid not in known
+            for event in self.process_events
+        ):
+            raise ValueError("every spawned PID must be listed in process_ids")
+        sequences = [event.sequence for event in self.process_events]
+        sequences.extend(event.sequence for event in self.file_events)
+        if sorted(sequences) != list(range(len(sequences))):
+            raise ValueError("Linux event sequence numbers must be contiguous and unique")
+        digest_pids: set[int] = set()
+        for name, digest in self.raw_trace_sha256.items():
+            if not name.startswith("pid:") or not name[4:].isdigit():
+                raise ValueError(f"invalid logical trace name {name!r}")
+            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                raise ValueError(f"invalid raw trace SHA-256 for {name!r}")
+            digest_pids.add(int(name[4:]))
+        if not digest_pids <= known:
+            raise ValueError("raw trace digests cannot name an unknown PID")
+        if self.collection_complete == bool(self.issues):
+            raise ValueError("complete Linux traces need no issues; incomplete traces need issues")
+        if self.collection_complete:
+            exited = {event.pid for event in self.process_events if event.operation == "exit"}
+            spawned = {
+                event.child_pid
+                for event in self.process_events
+                if event.operation == "spawn" and event.child_pid is not None
+            }
+            if digest_pids != known:
+                raise ValueError("complete Linux traces require a raw trace digest for every PID")
+            if exited != known:
+                raise ValueError("complete Linux traces require a terminal event for every PID")
+            if spawned != known - {self.root_pid}:
+                raise ValueError("complete Linux traces require parentage for every descendant")
+            if not any(
+                event.operation == "exec" and event.pid == self.root_pid
+                for event in self.process_events
+            ):
+                raise ValueError("complete Linux traces require a root exec event")
+        return self
+
+
 class MonitoredCommandEnvelope(_StrictCaptureModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     capture_id: str = Field(min_length=1)
-    collector: Literal["crucible-command-envelope-v1"] = "crucible-command-envelope-v1"
-    scope: Literal["top_level_runner_call_only"] = "top_level_runner_call_only"
+    collector: Literal["crucible-command-envelope-v1", "crucible-linux-strace-v1"] = (
+        "crucible-command-envelope-v1"
+    )
+    scope: Literal["top_level_runner_call_only", "linux_process_tree"] = (
+        "top_level_runner_call_only"
+    )
     trust_basis: Literal["runner_is_harness_tcb"] = "runner_is_harness_tcb"
     context: MonitorContext
     submitted_command: str = Field(min_length=1)
@@ -225,6 +399,7 @@ class MonitoredCommandEnvelope(_StrictCaptureModel):
     after: WorkspaceDigestSnapshot
     result: CapturedCommandResult
     completeness: CaptureCompleteness
+    linux_events: LinuxEventTrace | None = None
 
     @model_validator(mode="after")
     def _consistent_envelope(self) -> MonitoredCommandEnvelope:
@@ -234,7 +409,7 @@ class MonitoredCommandEnvelope(_StrictCaptureModel):
             raise ValueError("capture finish time precedes its start time")
         facets = self.completeness.facets
         if facets[CaptureFacet.SUBMITTED_COMMAND] is not CaptureState.CAPTURED:
-            raise ValueError("the v1 envelope must capture the submitted command")
+            raise ValueError("a monitored envelope must capture the submitted command")
         expected_result_state = (
             CaptureState.INCOMPLETE
             if self.result.outcome == "runner_error"
@@ -254,13 +429,40 @@ class MonitoredCommandEnvelope(_StrictCaptureModel):
         )
         if facets[CaptureFacet.PRE_POST_FILE_DIGESTS] is not expected_snapshot_state:
             raise ValueError("digest completeness disagrees with snapshot or cleanup status")
-        if any(facets[facet] is not CaptureState.UNSUPPORTED for facet in _V1_UNSUPPORTED_FACETS):
-            raise ValueError("the v1 command envelope cannot claim causal provenance facets")
+        if self.collector == "crucible-command-envelope-v1":
+            if self.schema_version != 1 or self.scope != "top_level_runner_call_only":
+                raise ValueError("the v1 command collector requires its v1 schema and scope")
+            if self.linux_events is not None:
+                raise ValueError("the v1 command collector cannot carry Linux events")
+            if any(
+                facets[facet] is not CaptureState.UNSUPPORTED for facet in CAUSAL_CAPTURE_FACETS
+            ):
+                raise ValueError("the v1 command envelope cannot claim causal provenance facets")
+        else:
+            if self.schema_version != 2 or self.scope != "linux_process_tree":
+                raise ValueError("the Linux collector requires schema v2 and process-tree scope")
+            if self.linux_events is None:
+                raise ValueError("the Linux collector requires normalized Linux events")
+            causal_state = (
+                CaptureState.CAPTURED
+                if self.linux_events.collection_complete
+                and self.result.cleanup_status == "verified"
+                else CaptureState.INCOMPLETE
+            )
+            if any(facets[facet] is not causal_state for facet in CAUSAL_CAPTURE_FACETS):
+                raise ValueError("causal facet completeness disagrees with the Linux event trace")
         return self
 
 
 class RunCaptureSummary(_StrictCaptureModel):
-    mode: Literal["not_requested", "no_action", "command_envelope_v1", "partial", "unavailable"]
+    mode: Literal[
+        "not_requested",
+        "no_action",
+        "command_envelope_v1",
+        "linux_events_v1",
+        "partial",
+        "unavailable",
+    ]
     capture_ids: tuple[str, ...]
     capture_count: StrictInt = Field(ge=0)
     completed_commands: StrictInt = Field(ge=0)
@@ -367,19 +569,19 @@ def summarize_captures(
     if not captures:
         failure_state = monitoring_failures[0][0] if monitoring_failures else None
         state = failure_state or CaptureState.NOT_REQUESTED
-        mode: Literal["not_requested", "no_action", "unavailable"]
+        empty_mode: Literal["not_requested", "no_action", "unavailable"]
         issues: tuple[str, ...]
         if monitoring_failures:
-            mode = "unavailable"
+            empty_mode = "unavailable"
             issues = tuple(reason for _state, reason in monitoring_failures)
         elif monitoring_requested:
-            mode = "no_action"
+            empty_mode = "no_action"
             issues = ("no eligible scientific action reached the monitored execution boundary",)
         else:
-            mode = "not_requested"
+            empty_mode = "not_requested"
             issues = ()
         return RunCaptureSummary(
-            mode=mode,
+            mode=empty_mode,
             capture_ids=(),
             capture_count=0,
             completed_commands=0,
@@ -388,7 +590,7 @@ def summarize_captures(
             facets={
                 facet: (
                     CaptureState.UNSUPPORTED
-                    if monitoring_failures and facet in _V1_UNSUPPORTED_FACETS
+                    if monitoring_failures and facet in CAUSAL_CAPTURE_FACETS
                     else state
                 )
                 for facet in CaptureFacet
@@ -398,7 +600,7 @@ def summarize_captures(
 
     def aggregate(facet: CaptureFacet) -> CaptureState:
         states = {capture.completeness.facets[facet] for capture in captures}
-        if facet not in _V1_UNSUPPORTED_FACETS:
+        if facet not in CAUSAL_CAPTURE_FACETS:
             states.update(state for state, _reason in monitoring_failures)
         for candidate in (
             CaptureState.INCOMPLETE,
@@ -414,10 +616,16 @@ def summarize_captures(
     has_incomplete_capture = any(
         CaptureState.INCOMPLETE in capture.completeness.facets.values() for capture in captures
     )
+    collectors = {capture.collector for capture in captures}
+    aggregate_mode: Literal["command_envelope_v1", "linux_events_v1", "partial"]
+    if monitoring_failures or has_incomplete_capture or len(collectors) != 1:
+        aggregate_mode = "partial"
+    elif collectors == {"crucible-linux-strace-v1"}:
+        aggregate_mode = "linux_events_v1"
+    else:
+        aggregate_mode = "command_envelope_v1"
     return RunCaptureSummary(
-        mode=(
-            "partial" if monitoring_failures or has_incomplete_capture else "command_envelope_v1"
-        ),
+        mode=aggregate_mode,
         capture_ids=tuple(capture.capture_id for capture in captures),
         capture_count=len(captures),
         completed_commands=outcomes.count("completed"),
@@ -441,10 +649,16 @@ def summarize_captures(
 
 __all__ = [
     "ALL_CAPTURE_FACETS",
+    "CAUSAL_CAPTURE_FACETS",
     "CaptureCompleteness",
     "CaptureFacet",
     "CaptureState",
     "CapturedCommandResult",
+    "LinuxEventTrace",
+    "LinuxFileOperation",
+    "LinuxFileEvent",
+    "LinuxProcessOperation",
+    "LinuxProcessEvent",
     "MonitorContext",
     "MonitoredCommandEnvelope",
     "RunCaptureSummary",

@@ -22,7 +22,7 @@ def submit(
     paper: str | None = typer.Option(None, "--paper", help="Paper PDF to extract claims from (needs an LLM key)."),
     repo_uri: str | None = typer.Option(None, "--repo-uri", help="Canonical repo URI for provenance."),
     out: str | None = typer.Option(None, "--out", help="Write the reproducibility certificate JSON here."),
-    isolation: str = typer.Option("subprocess", "--runner", help="subprocess | docker"),
+    isolation: str = typer.Option("subprocess", "--runner", help="subprocess | linux-strace | docker"),
     image: str | None = typer.Option(None, "--image", help="Docker base image (with --runner docker)."),
     gpus: str | None = typer.Option(None, "--gpus", help="GPU passthrough, e.g. 'all' (docker only)."),
     recover: bool = typer.Option(False, "--recover", help="Enable diagnosis + recovery (design §9)."),
@@ -41,25 +41,40 @@ def submit(
             typer.echo(f"submit: {exc}")
             raise typer.Exit(code=1) from None
 
-    envmgr = runner = None
+    from crucible.envmgr.manager import EnvironmentManager
+    from crucible.runners.base import Runner
+
+    envmgr: EnvironmentManager | None = None
+    runner: Runner | None = None
     if isolation == "docker":
         from crucible.envmgr.manager import DockerEnvironmentManager
         from crucible.runners.base import DockerExecRunner
 
         envmgr = DockerEnvironmentManager(base_image=image or "crucible/base:py3.12", gpus=gpus)
         runner = DockerExecRunner(envmgr)
+    elif isolation == "linux-strace":
+        if image is not None or gpus is not None:
+            raise typer.BadParameter("--image and --gpus require --runner docker")
+        from crucible.runners.base import LinuxStraceRunner
+
+        runner = LinuxStraceRunner()
+    elif isolation != "subprocess":
+        raise typer.BadParameter(
+            f"unknown runner {isolation!r}; choose subprocess, linux-strace, or docker"
+        )
 
     recovery = None
     if recover:
         from crucible.recovery import (
             CascadingDiagnoser,
+            Diagnoser,
             LLMDiagnoser,
             RecoveryEngine,
             RuleDiagnoser,
             seed_library,
         )
 
-        diagnoser = RuleDiagnoser()
+        diagnoser: Diagnoser = RuleDiagnoser()
         client = llm
         if client is None:
             try:

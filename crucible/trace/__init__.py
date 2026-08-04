@@ -1,10 +1,14 @@
 """Execution trace recording and typed command-capture envelopes."""
 
 from .capture import (
+    CAUSAL_CAPTURE_FACETS,
     CaptureCompleteness,
     CaptureFacet,
     CaptureState,
     CapturedCommandResult,
+    LinuxEventTrace,
+    LinuxFileEvent,
+    LinuxProcessEvent,
     MonitorContext,
     MonitoredCommandEnvelope,
     RunCaptureSummary,
@@ -15,10 +19,14 @@ from .capture import (
 from .recorder import SQLiteTraceRecorder, TraceRecorder
 
 __all__ = [
+    "CAUSAL_CAPTURE_FACETS",
     "CaptureCompleteness",
     "CaptureFacet",
     "CaptureState",
     "CapturedCommandResult",
+    "LinuxEventTrace",
+    "LinuxFileEvent",
+    "LinuxProcessEvent",
     "MonitorContext",
     "MonitoredCommandEnvelope",
     "RunCaptureSummary",

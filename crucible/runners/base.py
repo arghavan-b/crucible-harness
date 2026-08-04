@@ -4,24 +4,32 @@ One interface over local execution and remote GPU (Modal / RunPod). The executor
 is Runner-agnostic: it calls `run(...)` and never cares whether the command lands
 in a Docker container, a host subprocess, or a remote GPU box.
 
-Two implementations ship in the Stage-0 slice:
+Built-in implementations include:
   - LocalSubprocessRunner: runs commands on the host inside a working dir. No
     isolation; for development and CI where Docker is unavailable.
+  - LinuxStraceRunner: host subprocess execution plus causal process/file event
+    capture for scientific commands on Linux.
   - LocalDockerRunner: runs commands inside a container (the real unit of
     isolation, design §6.3). Used once Docker is present.
+  - DockerExecRunner: runs commands in a persistent managed container.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import shlex
+import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from typing import Callable, Literal, Protocol, runtime_checkable
 
 from crucible.trace.capture import (
+    CAUSAL_CAPTURE_FACETS,
     CaptureCompleteness,
     CaptureFacet,
     CaptureState,
@@ -30,6 +38,7 @@ from crucible.trace.capture import (
     MonitoredCommandEnvelope,
     snapshot_regular_files,
 )
+from crucible.trace.linux_strace import STRACE_SYSCALLS, parse_strace_trace
 
 
 @dataclass
@@ -285,6 +294,225 @@ class LocalSubprocessRunner(_HarnessMonitoredMixin):
         )
 
 
+class LinuxStraceRunner(_HarnessMonitoredMixin):
+    """Linux-only causal event collector using a harness-owned ``strace``.
+
+    Ordinary harness probes use the local subprocess delegate. Scientific and
+    recovery actions use ``strace -ff`` with fork following, decoded file
+    descriptors, and kill-on-tracer-exit. The normalized event trace and raw
+    per-PID trace digests are embedded in the usual monitored envelope.
+    """
+
+    def __init__(
+        self,
+        strace_path: str = "strace",
+        *,
+        platform_name: str | None = None,
+    ) -> None:
+        self.strace_path = strace_path
+        self.platform_name = platform_name or sys.platform
+        self._delegate = LocalSubprocessRunner()
+        self._resolved_strace: str | None = None
+        self._strace_version: str | None = None
+
+    def run(
+        self, command: str, working_dir: str, timeout_s: int = 1800, image: str | None = None
+    ) -> CommandResult:
+        return self._delegate.run(command, working_dir, timeout_s, image)
+
+    def _resolve_collector(self) -> tuple[str, str]:
+        if self.platform_name != "linux":
+            raise RuntimeError(f"LinuxStraceRunner requires Linux; detected {self.platform_name!r}")
+        if self._resolved_strace is not None and self._strace_version is not None:
+            return self._resolved_strace, self._strace_version
+        resolved = shutil.which(self.strace_path)
+        if resolved is None:
+            raise RuntimeError(f"strace executable not found: {self.strace_path!r}")
+        version_probe = subprocess.run(
+            [resolved, "--version"], capture_output=True, text=True, timeout=10
+        )
+        if version_probe.returncode != 0:
+            raise RuntimeError(f"strace --version failed: {version_probe.stderr.strip()}")
+        help_probe = subprocess.run(
+            [resolved, "--help"], capture_output=True, text=True, timeout=10
+        )
+        help_text = f"{help_probe.stdout}\n{help_probe.stderr}"
+        missing = [flag for flag in ("--kill-on-exit", "-ff", "-yy") if flag not in help_text]
+        if help_probe.returncode != 0 or missing:
+            detail = (
+                f"missing required option(s): {', '.join(missing)}" if missing else "help failed"
+            )
+            raise RuntimeError(f"incompatible strace: {detail}")
+        version = (version_probe.stdout or version_probe.stderr).splitlines()[0].strip()
+        if not version:
+            raise RuntimeError("strace version output was empty")
+        self._resolved_strace = resolved
+        self._strace_version = version
+        return resolved, version
+
+    def run_monitored(
+        self,
+        command: str,
+        working_dir: str,
+        context: MonitorContext,
+        timeout_s: int = 1800,
+        image: str | None = None,
+    ) -> MonitoredCommandResult:
+        if image is not None:
+            raise RuntimeError(
+                "LinuxStraceRunner traces host subprocesses only; use it with a local environment"
+            )
+        strace, strace_version = self._resolve_collector()
+        started_at = time.time()
+        envelope_started_monotonic = time.monotonic()
+        before = snapshot_regular_files(working_dir)
+        timed_out = False
+        collection_issue: str | None = None
+
+        with tempfile.TemporaryDirectory(prefix="crucible_strace_") as trace_dir:
+            trace_prefix = os.path.join(trace_dir, "events")
+            argv = [
+                strace,
+                "-ff",
+                "-q",
+                "-ttt",
+                "-yy",
+                "-s",
+                "4096",
+                "--kill-on-exit",
+                "-o",
+                trace_prefix,
+                "-e",
+                f"trace={','.join(STRACE_SYSCALLS)}",
+                "/bin/sh",
+                "-lc",
+                command,
+            ]
+            command_started_monotonic = time.monotonic()
+            process = subprocess.Popen(
+                argv,
+                cwd=working_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            try:
+                stdout, stderr = process.communicate(timeout=timeout_s)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                collection_issue = f"strace collection timed out after {timeout_s}s"
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                stdout, stderr = process.communicate()
+            command_duration_s = time.monotonic() - command_started_monotonic
+            after = snapshot_regular_files(working_dir)
+            linux_events = parse_strace_trace(
+                trace_prefix,
+                working_dir=working_dir,
+                strace_version=strace_version,
+                collection_issue=collection_issue,
+            )
+
+        cleanup_status: Literal["verified", "unverified"] = (
+            "unverified" if timed_out else "verified"
+        )
+        has_exec = any(event.operation == "exec" for event in linux_events.process_events)
+        result: CommandResult | None
+        if has_exec:
+            result = CommandResult(
+                exit_code=124 if timed_out else process.returncode,
+                stdout=stdout,
+                stderr=(
+                    f"{stderr}\n[crucible] timed out after {timeout_s}s" if timed_out else stderr
+                ),
+                timed_out=timed_out,
+            )
+            captured_result = CapturedCommandResult(
+                outcome="timed_out" if timed_out else "completed",
+                exit_code=result.exit_code,
+                timed_out=result.timed_out,
+                stdout_chars=len(result.stdout),
+                stderr_chars=len(result.stderr),
+                stdout_text_sha256=_text_sha256(result.stdout),
+                stderr_text_sha256=_text_sha256(result.stderr),
+                cleanup_status=cleanup_status,
+            )
+        else:
+            result = None
+            error = "strace did not observe command exec"
+            if stderr.strip():
+                error = f"{error}: {stderr.strip()[-1000:]}"
+            captured_result = CapturedCommandResult(
+                outcome="runner_error",
+                exit_code=None,
+                timed_out=False,
+                stdout_chars=0,
+                stderr_chars=0,
+                stdout_text_sha256=_text_sha256(""),
+                stderr_text_sha256=_text_sha256(""),
+                runner_error=error,
+                cleanup_status=cleanup_status,
+            )
+
+        causal_state = (
+            CaptureState.CAPTURED
+            if linux_events.collection_complete and cleanup_status == "verified"
+            else CaptureState.INCOMPLETE
+        )
+        facets = {facet: causal_state for facet in CAUSAL_CAPTURE_FACETS}
+        facets.update(
+            {
+                CaptureFacet.SUBMITTED_COMMAND: CaptureState.CAPTURED,
+                CaptureFacet.COMMAND_RESULT: (
+                    CaptureState.INCOMPLETE
+                    if captured_result.outcome == "runner_error"
+                    else CaptureState.CAPTURED
+                ),
+                CaptureFacet.DECODED_STDIO_TEXT: (
+                    CaptureState.INCOMPLETE
+                    if captured_result.outcome == "runner_error"
+                    else CaptureState.CAPTURED
+                ),
+                CaptureFacet.PRE_POST_FILE_DIGESTS: (
+                    CaptureState.CAPTURED
+                    if before.complete and after.complete and cleanup_status == "verified"
+                    else CaptureState.INCOMPLETE
+                ),
+            }
+        )
+        issues = list(linux_events.issues)
+        if captured_result.outcome == "runner_error" and captured_result.runner_error:
+            issues.append(captured_result.runner_error)
+        if cleanup_status == "unverified":
+            issues.append("process-tree cleanup could not be verified after collector timeout")
+        finished_at = time.time()
+        capture = MonitoredCommandEnvelope(
+            schema_version=2,
+            capture_id=context.capture_id,
+            collector="crucible-linux-strace-v1",
+            scope="linux_process_tree",
+            context=context,
+            submitted_command=command,
+            runner_type=f"{type(self).__module__}.{type(self).__qualname__}",
+            host_platform=self.platform_name,
+            image=image,
+            timeout_s=timeout_s,
+            started_at=started_at,
+            finished_at=finished_at,
+            command_duration_s=command_duration_s,
+            envelope_duration_s=time.monotonic() - envelope_started_monotonic,
+            before=before,
+            after=after,
+            result=captured_result,
+            completeness=CaptureCompleteness(facets=facets, issues=tuple(issues)),
+            linux_events=linux_events,
+        )
+        return MonitoredCommandResult(command=result, capture=capture)
+
+
 class LocalDockerRunner(_HarnessMonitoredMixin):
     """Stateless: a fresh container per command (design §6.3).
 
@@ -385,6 +613,7 @@ class DockerExecRunner(_HarnessMonitoredMixin):
 __all__ = [
     "CommandResult",
     "DockerExecRunner",
+    "LinuxStraceRunner",
     "LocalDockerRunner",
     "LocalSubprocessRunner",
     "MonitoredCommandResult",
