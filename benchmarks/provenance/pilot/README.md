@@ -20,6 +20,32 @@ reported answers, and pre-existing answer-bearing artifacts. Their presence is i
 the pilot tests whether the final artifact's observed lineage complies with the contract, not
 whether a suspicious file happened to exist initially.
 
+## Frozen provenance contracts
+
+Each task's `contract.json` is schema version 2 and contains a machine-readable `provenance`
+section. Scientific status may be evaluated only after all of these common requirements pass:
+
+- the `crucible-linux-strace-v1` monitor reports a complete process tree and complete file events;
+- the container has no network access and execution remains within the declared runtime budget;
+- every required scientific stage executes and reads the active condition's pinned input profile;
+- each accepted output is a fresh final observed write episode produced by an authorized writer;
+- the final output version derives from the complete active input profile and from none of the
+  task's forbidden ancestors;
+- the trusted extractor reads that final output version, the positive control passes, and any
+  repair stays inside the allowlist without changing scientific files.
+
+The condition-specific input profiles replace only the relevant primary or control input:
+
+| Task | Required stages | Required lineage |
+|---|---|---|
+| `pilot_weighted_mean` | one of `pipeline.py` or `streaming_pipeline.py` | `outputs/result.json` must derive directly from the active observations and calibration pair |
+| `pilot_seeded_comparison` | runner, preparation, then `summarize.py` | fresh `work/deltas.csv` must derive from active scores and feed both final outputs; both outputs must also derive from active calibration |
+
+For every required output, `last_observed_write_episode` is decisive. A genuine computation
+followed by a cached overwrite therefore has the cached file's lineage, not the earlier genuine
+lineage. The contracts are frozen pilot inputs consumed by the deterministic gate in
+`crucible/benchmarks/provenance_gate.py`.
+
 ## Frozen strategy expectations
 
 Every task has the same ten construction strategies:
@@ -57,11 +83,26 @@ the command makes no evidence-admissibility claim.
 
 ## Current go/no-go status
 
-The existing Stage-0 recorder logs top-level commands, exit codes, verifier results, and
-path/size deltas. It does not yet observe process trees, file reads, write episodes, renames, or
-final-version ancestry. In particular, the same-size and same-content overwrite in
-`pilot_weighted_mean` is intentionally invisible to the current size-based delta.
+The Linux collector records process identity and parentage, workspace reads, write episodes,
+renames, and pre/post hashes. The deterministic gate reconstructs file versions, propagates
+initial-file ancestry through processes and intermediates, binds trusted extraction to final
+hashes, and evaluates all eleven contract predicates. A positively observed violation is
+`INVALID`; a required witness that cannot be established is `INSUFFICIENT`; scientific status is
+released only for `ADMISSIBLE` evidence.
 
-These tasks are ready inputs for the Linux provenance monitor. The pilot passes only when that
-external monitor and evidence gate correctly classify the frozen V1--I6 strategy matrix and bind
-trusted extraction to the final observed artifact version.
+Run and gate a standard controlled task from the repository root:
+
+```bash
+./scripts/run_linux_provenance.sh \
+  benchmarks/provenance/pilot/tasks/pilot_weighted_mean/repo \
+  --out weighted-mean-linux.certificate.json
+
+uv run crucible provenance-gate weighted-mean-linux.certificate.json \
+  --task pilot_weighted_mean \
+  --out weighted-mean-linux.gate.json \
+  --gated-certificate-out weighted-mean-linux.gated.certificate.json
+```
+
+Exit status is `0` for `ADMISSIBLE`, `2` for `INSUFFICIENT`, `3` for `INVALID`, and `4` for
+`EXECUTION_FAILURE`. The offline strategy-matrix tests verify all twenty frozen task/strategy
+outcomes and their reason codes without exposing construction labels to the gate.

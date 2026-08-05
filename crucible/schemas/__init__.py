@@ -20,6 +20,16 @@ from .enums import (
 from .ontology import ONTOLOGY_VERSION, StepType
 from .plan import Action, ExecutionPlan, Rollback, Step, StepBudget
 from .policy import ArtifactRule, NondeterminismPolicy, RuleMode
+from .provenance import (
+    PROVENANCE_PREDICATES,
+    EvidenceStatus,
+    FileVersionWitness,
+    PredicateEvaluation,
+    PredicateStatus,
+    ProvenanceGateDecision,
+    ProvenancePredicate,
+    ScientificStatus,
+)
 from .spec import (
     Budget,
     ClaimUnderTest,
@@ -55,10 +65,12 @@ __all__ = [
     "ClaimUnderTest",
     "EnvironmentConstraints",
     "Evidence",
+    "EvidenceStatus",
     "ExecutionIntegrity",
     "ExecutionPlan",
     "ExperimentSpec",
     "FailureCategory",
+    "FileVersionWitness",
     "GpuConstraint",
     "Hypothesis",
     "HypothesisType",
@@ -68,7 +80,12 @@ __all__ = [
     "PlaybookStatus",
     "PositiveControl",
     "PositiveControlEvidence",
+    "PredicateEvaluation",
+    "PredicateStatus",
     "Provenance",
+    "ProvenanceGateDecision",
+    "ProvenancePredicate",
+    "PROVENANCE_PREDICATES",
     "ReproducibilityCertificate",
     "ResultEvidence",
     "Rollback",
@@ -76,6 +93,7 @@ __all__ = [
     "RuleMode",
     "ScalePolicy",
     "Severity",
+    "ScientificStatus",
     "Source",
     "Step",
     "StepBudget",

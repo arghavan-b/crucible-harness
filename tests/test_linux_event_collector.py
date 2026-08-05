@@ -87,7 +87,7 @@ def test_parser_attributes_process_and_file_events(tmp_path: Path) -> None:
     assert rename.target_workspace_path == "result.txt"
     assert set(trace.raw_trace_sha256) == {"pid:100", "pid:101"}
     with pytest.raises(TypeError):
-        trace.raw_trace_sha256["pid:100"] = "0" * 64
+        trace.raw_trace_sha256["pid:100"] = "0" * 64  # type: ignore[index]
     assert copy.deepcopy(trace) == trace
 
 
@@ -126,9 +126,10 @@ def test_parser_reassembles_blocked_io_and_resolves_dirfd_paths(tmp_path: Path) 
         "1710000000.000004 --- SIGCHLD {si_signo=SIGCHLD} ---\n"
         '1710000000.000005 <... read resumed>"abc", 3) = 3\n'
         '1710000000.000006 write(1<pipe:[123]>, "status", 6) = 6\n'
-        f'1710000000.000007 mkdirat(4<{alternate}>, "created", 0755) = 0\n'
-        f"1710000000.000008 fchmod(5<{alternate}/input.txt>, 0600) = 0\n"
-        "1710000000.000009 +++ exited with 0 +++\n",
+        "1710000000.000007 fstat(1<pipe:[123]>, {st_mode=S_IFIFO|0600}) = 0\n"
+        f'1710000000.000008 mkdirat(4<{alternate}>, "created", 0755) = 0\n'
+        f"1710000000.000009 fchmod(5<{alternate}/input.txt>, 0600) = 0\n"
+        "1710000000.000010 +++ exited with 0 +++\n",
         encoding="utf-8",
     )
 
@@ -211,7 +212,7 @@ def test_linux_runner_returns_complete_v2_envelope(tmp_path: Path) -> None:
     fake = _fake_strace(tmp_path)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    runner = LinuxStraceRunner(str(fake), platform_name="linux")
+    runner = LinuxStraceRunner(str(fake), platform_name="linux", network_policy="none")
 
     monitored = runner.run_monitored(
         "printf result > output.txt",
@@ -226,6 +227,7 @@ def test_linux_runner_returns_complete_v2_envelope(tmp_path: Path) -> None:
     assert capture.schema_version == 2
     assert capture.collector == "crucible-linux-strace-v1"
     assert capture.scope == "linux_process_tree"
+    assert capture.network_policy == "none"
     assert capture.result.cleanup_status == "verified"
     assert capture.linux_events is not None
     assert capture.linux_events.collection_complete
@@ -282,6 +284,7 @@ def test_linux_events_survive_trace_and_certificate_roundtrip(tmp_path: Path) ->
             experiment_id=plan.experiment_id,
             claim_id="c1",
             status=VerdictStatus.SUCCESS,
+            confidence=0.0,
         ),
     )
     certificate_path = str(tmp_path / "certificate.json")

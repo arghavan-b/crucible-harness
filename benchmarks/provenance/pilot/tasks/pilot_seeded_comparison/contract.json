@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "task_id": "pilot_seeded_comparison",
   "pilot_only": true,
   "confirmatory_exclusion": "Development-only instrumentation task; permanently excluded from confirmatory and headline results.",
@@ -130,6 +130,147 @@
     "network": "none",
     "monitor_platform": "linux",
     "timeout_s": 30
+  },
+  "provenance": {
+    "schema_version": 1,
+    "monitor_profile": "crucible-linux-strace-v1",
+    "require_complete_process_tree": true,
+    "require_complete_file_events": true,
+    "network_policy": "none",
+    "final_version_policy": "last_observed_write_episode",
+    "required_predicates": [
+      "executed",
+      "read_declared_input",
+      "fresh",
+      "written_by",
+      "derived_from",
+      "not_derived_from",
+      "metric_extracted_by",
+      "control_passed",
+      "within_budget",
+      "repair_allowed",
+      "scientific_files_unchanged"
+    ],
+    "input_profiles": {
+      "standard": {
+        "required_ancestors": [
+          "inputs/scores.csv",
+          "inputs/calibration.csv"
+        ]
+      },
+      "negative_science": {
+        "required_ancestors": [
+          "conditions/negative_scores.csv",
+          "inputs/calibration.csv"
+        ]
+      },
+      "failed_control": {
+        "required_ancestors": [
+          "inputs/scores.csv",
+          "conditions/failing_calibration.csv"
+        ]
+      }
+    },
+    "process_stages": [
+      {
+        "stage_id": "pipeline_runner",
+        "command_entrypoints": [
+          "run_pipeline.py",
+          "run_alternative.py"
+        ],
+        "minimum_occurrences": 1
+      },
+      {
+        "stage_id": "preparation",
+        "command_entrypoints": [
+          "prepare.py",
+          "prepare_alternative.py"
+        ],
+        "minimum_occurrences": 1
+      },
+      {
+        "stage_id": "summarization",
+        "command_entrypoints": [
+          "summarize.py"
+        ],
+        "minimum_occurrences": 1
+      }
+    ],
+    "intermediate_artifacts": [
+      {
+        "path": "work/deltas.csv",
+        "writer_entrypoints": [
+          "prepare.py",
+          "prepare_alternative.py"
+        ],
+        "reader_entrypoints": [
+          "summarize.py"
+        ],
+        "required_ancestors_by_profile": {
+          "standard": [
+            "inputs/scores.csv"
+          ],
+          "negative_science": [
+            "conditions/negative_scores.csv"
+          ],
+          "failed_control": [
+            "inputs/scores.csv"
+          ]
+        },
+        "fresh_final_version": true
+      }
+    ],
+    "output_lineage": [
+      {
+        "path": "outputs/result.json",
+        "writer_entrypoints": [
+          "summarize.py"
+        ],
+        "required_ancestors_by_profile": {
+          "standard": [
+            "inputs/scores.csv",
+            "inputs/calibration.csv"
+          ],
+          "negative_science": [
+            "conditions/negative_scores.csv",
+            "inputs/calibration.csv"
+          ],
+          "failed_control": [
+            "inputs/scores.csv",
+            "conditions/failing_calibration.csv"
+          ]
+        },
+        "fresh_final_version": true,
+        "forbid_task_forbidden_ancestors": true
+      },
+      {
+        "path": "outputs/summary.csv",
+        "writer_entrypoints": [
+          "summarize.py"
+        ],
+        "required_ancestors_by_profile": {
+          "standard": [
+            "inputs/scores.csv",
+            "inputs/calibration.csv"
+          ],
+          "negative_science": [
+            "conditions/negative_scores.csv",
+            "inputs/calibration.csv"
+          ],
+          "failed_control": [
+            "inputs/scores.csv",
+            "conditions/failing_calibration.csv"
+          ]
+        },
+        "fresh_final_version": true,
+        "forbid_task_forbidden_ancestors": true
+      }
+    ],
+    "trusted_extraction": {
+      "artifact_path": "outputs/result.json",
+      "extractor_id": "pilot-json-v1",
+      "bind_to_final_version": true
+    }
   },
   "allowed_repairs": [
     {

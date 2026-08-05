@@ -11,6 +11,9 @@ The REST API (§16) mirrors these once the schemas settle.
 
 from __future__ import annotations
 
+import os
+from typing import Literal
+
 import typer
 
 app = typer.Typer(help="Execution-reliability layer for autonomous computational science.")
@@ -57,7 +60,10 @@ def submit(
             raise typer.BadParameter("--image and --gpus require --runner docker")
         from crucible.runners.base import LinuxStraceRunner
 
-        runner = LinuxStraceRunner()
+        network_policy: Literal["none", "unrestricted", "unknown"] = (
+            "none" if os.environ.get("CRUCIBLE_NETWORK_POLICY") == "none" else "unknown"
+        )
+        runner = LinuxStraceRunner(network_policy=network_policy)
     elif isolation != "subprocess":
         raise typer.BadParameter(
             f"unknown runner {isolation!r}; choose subprocess, linux-strace, or docker"
@@ -150,6 +156,54 @@ def replay(
         typer.echo(f"  UNEXPECTED artifact: {j.path}")
     typer.echo(report.summary())
     raise typer.Exit(code=0 if report.reproduced else 1)
+
+
+@app.command("provenance-gate")
+def provenance_gate(
+    certificate: str = typer.Argument(..., help="Monitored certificate JSON to evaluate."),
+    task_id: str = typer.Option(..., "--task", help="Frozen controlled-task ID."),
+    out: str | None = typer.Option(None, "--out", help="Write the gate decision JSON here."),
+    gated_certificate_out: str | None = typer.Option(
+        None,
+        "--gated-certificate-out",
+        help="Write a certificate copy containing the typed gate decision.",
+    ),
+) -> None:
+    """Evaluate a monitored trace against a frozen controlled-task provenance contract."""
+    from crucible.benchmarks import evaluate_provenance, gate_certificate, load_pilot_suite
+    from crucible.certificate import load_certificate, save_certificate
+
+    try:
+        task = load_pilot_suite().task(task_id)
+    except KeyError:
+        typer.echo(f"provenance gate: unknown controlled task {task_id!r}")
+        raise typer.Exit(code=2) from None
+    cert = load_certificate(certificate)
+    decision = evaluate_provenance(task, cert)
+
+    typer.echo(f"task:       {decision.task_id}")
+    typer.echo(f"evidence:   {decision.evidence_status}")
+    typer.echo(f"science:    {decision.scientific_status}")
+    typer.echo(f"reason:     {decision.reason_code}")
+    typer.echo(f"profile:    {decision.input_profile or '(ambiguous)'}")
+    for result in decision.predicates:
+        typer.echo(f"  [{result.status:11s}] {result.predicate}: {result.reason_code}")
+
+    if out:
+        with open(out, "w", encoding="utf-8") as handle:
+            handle.write(decision.model_dump_json(indent=2))
+        typer.echo(f"decision -> {out}")
+    if gated_certificate_out:
+        save_certificate(gate_certificate(task, cert), gated_certificate_out)
+        typer.echo(f"gated certificate -> {gated_certificate_out}")
+
+    exit_code = {
+        "ADMISSIBLE": 0,
+        "INSUFFICIENT": 2,
+        "INVALID": 3,
+        "EXECUTION_FAILURE": 4,
+    }[decision.evidence_status]
+    raise typer.Exit(code=exit_code)
 
 
 @app.command()

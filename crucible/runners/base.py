@@ -308,9 +308,11 @@ class LinuxStraceRunner(_HarnessMonitoredMixin):
         strace_path: str = "strace",
         *,
         platform_name: str | None = None,
+        network_policy: Literal["none", "unrestricted", "unknown"] = "unknown",
     ) -> None:
         self.strace_path = strace_path
         self.platform_name = platform_name or sys.platform
+        self.network_policy = network_policy
         self._delegate = LocalSubprocessRunner()
         self._resolved_strace: str | None = None
         self._strace_version: str | None = None
@@ -499,6 +501,7 @@ class LinuxStraceRunner(_HarnessMonitoredMixin):
             runner_type=f"{type(self).__module__}.{type(self).__qualname__}",
             host_platform=self.platform_name,
             image=image,
+            network_policy=self.network_policy,
             timeout_s=timeout_s,
             started_at=started_at,
             finished_at=finished_at,

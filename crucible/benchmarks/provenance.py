@@ -39,11 +39,14 @@ from pydantic import (
 )
 
 from crucible.certificate.manifest import file_manifest, sha256_file
+from crucible.schemas.provenance import (
+    PROVENANCE_PREDICATES,
+    EvidenceStatus,
+    ProvenancePredicate,
+    ScientificStatus,
+)
 
 DEFAULT_PILOT_ROOT = Path(__file__).resolve().parents[2] / "benchmarks" / "provenance" / "pilot"
-
-EvidenceStatus = Literal["ADMISSIBLE", "INSUFFICIENT", "INVALID", "EXECUTION_FAILURE"]
-ScientificStatus = Literal["SUPPORTS", "DOES_NOT_SUPPORT", "UNDETERMINED"]
 
 _EXPECTED_VARIANTS = {
     "V1": "primary",
@@ -268,8 +271,143 @@ class RuntimeContract(_StrictModel):
     timeout_s: StrictInt = Field(gt=0)
 
 
-class ControlledTaskContract(_StrictModel):
+def _safe_unique_paths(value: tuple[str, ...], *, label: str) -> tuple[str, ...]:
+    normalized = tuple(_relative_path(path) for path in value)
+    if not normalized:
+        raise ValueError(f"{label} must not be empty")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError(f"{label} must be unique")
+    return normalized
+
+
+class ProvenanceInputProfile(_StrictModel):
+    """The initial file versions allowed to influence one execution condition."""
+
+    required_ancestors: tuple[str, ...]
+
+    @field_validator("required_ancestors")
+    @classmethod
+    def _validate_required_ancestors(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _safe_unique_paths(value, label="profile ancestors")
+
+
+class ProvenanceProcessStage(_StrictModel):
+    """A logical scientific stage that must appear in the monitored process tree."""
+
+    stage_id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    command_entrypoints: tuple[str, ...]
+    minimum_occurrences: StrictInt = Field(default=1, ge=1)
+
+    @field_validator("command_entrypoints")
+    @classmethod
+    def _validate_entrypoints(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _safe_unique_paths(value, label="stage entrypoints")
+
+
+class ProvenanceIntermediateRule(_StrictModel):
+    """Lineage required for an intermediate file's final observed version."""
+
+    path: str
+    writer_entrypoints: tuple[str, ...]
+    reader_entrypoints: tuple[str, ...]
+    required_ancestors_by_profile: dict[str, tuple[str, ...]]
+    fresh_final_version: Literal[True]
+
+    _safe_path = field_validator("path")(_relative_path)
+
+    @field_validator("writer_entrypoints", "reader_entrypoints")
+    @classmethod
+    def _validate_entrypoints(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _safe_unique_paths(value, label="intermediate entrypoints")
+
+    @field_validator("required_ancestors_by_profile")
+    @classmethod
+    def _validate_profile_ancestors(
+        cls, value: dict[str, tuple[str, ...]]
+    ) -> dict[str, tuple[str, ...]]:
+        if not value:
+            raise ValueError("intermediate lineage profiles must not be empty")
+        return {
+            profile: _safe_unique_paths(paths, label=f"{profile} intermediate ancestors")
+            for profile, paths in value.items()
+        }
+
+
+class ProvenanceOutputRule(_StrictModel):
+    """Lineage required for an accepted final output file version."""
+
+    path: str
+    writer_entrypoints: tuple[str, ...]
+    required_ancestors_by_profile: dict[str, tuple[str, ...]]
+    fresh_final_version: Literal[True]
+    forbid_task_forbidden_ancestors: Literal[True]
+
+    _safe_path = field_validator("path")(_relative_path)
+
+    @field_validator("writer_entrypoints")
+    @classmethod
+    def _validate_entrypoints(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        return _safe_unique_paths(value, label="output writer entrypoints")
+
+    @field_validator("required_ancestors_by_profile")
+    @classmethod
+    def _validate_profile_ancestors(
+        cls, value: dict[str, tuple[str, ...]]
+    ) -> dict[str, tuple[str, ...]]:
+        if not value:
+            raise ValueError("output lineage profiles must not be empty")
+        return {
+            profile: _safe_unique_paths(paths, label=f"{profile} output ancestors")
+            for profile, paths in value.items()
+        }
+
+
+class TrustedExtractionBinding(_StrictModel):
+    artifact_path: str
+    extractor_id: Literal["pilot-json-v1"]
+    bind_to_final_version: Literal[True]
+
+    _safe_artifact_path = field_validator("artifact_path")(_relative_path)
+
+
+class ProvenanceContract(_StrictModel):
+    """Declarative causal-evidence requirements evaluated before scientific status."""
+
     schema_version: Literal[1]
+    monitor_profile: Literal["crucible-linux-strace-v1"]
+    require_complete_process_tree: Literal[True]
+    require_complete_file_events: Literal[True]
+    network_policy: Literal["none"]
+    final_version_policy: Literal["last_observed_write_episode"]
+    required_predicates: tuple[ProvenancePredicate, ...]
+    input_profiles: dict[str, ProvenanceInputProfile]
+    process_stages: tuple[ProvenanceProcessStage, ...]
+    intermediate_artifacts: tuple[ProvenanceIntermediateRule, ...] = ()
+    output_lineage: tuple[ProvenanceOutputRule, ...]
+    trusted_extraction: TrustedExtractionBinding
+
+    @model_validator(mode="after")
+    def _validate_stable_vocabulary(self) -> ProvenanceContract:
+        if self.required_predicates != PROVENANCE_PREDICATES:
+            raise ValueError("provenance contract must declare the frozen predicate vocabulary")
+        if not self.input_profiles:
+            raise ValueError("provenance contract must declare input profiles")
+        stage_ids = [stage.stage_id for stage in self.process_stages]
+        if not stage_ids or len(set(stage_ids)) != len(stage_ids):
+            raise ValueError("provenance process stage IDs must be non-empty and unique")
+        intermediate_paths = [rule.path for rule in self.intermediate_artifacts]
+        output_paths = [rule.path for rule in self.output_lineage]
+        if len(set(intermediate_paths)) != len(intermediate_paths):
+            raise ValueError("provenance intermediate paths must be unique")
+        if not output_paths or len(set(output_paths)) != len(output_paths):
+            raise ValueError("provenance output paths must be non-empty and unique")
+        if set(intermediate_paths) & set(output_paths):
+            raise ValueError("provenance intermediate and output paths must be disjoint")
+        return self
+
+
+class ControlledTaskContract(_StrictModel):
+    schema_version: Literal[2]
     task_id: str
     pilot_only: Literal[True]
     confirmatory_exclusion: str
@@ -285,6 +423,7 @@ class ControlledTaskContract(_StrictModel):
     measurement: MeasurementRule
     positive_control: PositiveControlRule
     runtime: RuntimeContract
+    provenance: ProvenanceContract
     allowed_repairs: tuple[AllowedRepair, ...] = ()
     allowed_scientific_variants: tuple[AllowedScientificVariant, ...] = ()
 
@@ -354,6 +493,75 @@ class ControlledTaskContract(_StrictModel):
         ]
         if len(set(pinned_paths)) != len(pinned_paths):
             raise ValueError("declared, condition, and forbidden input paths must be unique")
+
+        provenance = self.provenance
+        if provenance.network_policy != self.runtime.network:
+            raise ValueError("provenance and runtime network policies must agree")
+        expected_profiles = {"standard", *self.condition_inputs}
+        if set(provenance.input_profiles) != expected_profiles:
+            raise ValueError(
+                "provenance input profiles must be standard plus every declared condition"
+            )
+        declared_paths = {item.path for item in self.declared_inputs}
+        standard_paths = set(provenance.input_profiles["standard"].required_ancestors)
+        if standard_paths != declared_paths:
+            raise ValueError("standard provenance input profile must equal declared_inputs")
+        for profile_id, condition_items in self.condition_inputs.items():
+            profile_paths = set(provenance.input_profiles[profile_id].required_ancestors)
+            condition_paths = {item.path for item in condition_items}
+            if not condition_paths <= profile_paths:
+                raise ValueError(f"provenance profile {profile_id!r} omits its condition inputs")
+            if not profile_paths <= declared_paths | condition_paths:
+                raise ValueError(f"provenance profile {profile_id!r} contains an unpinned input")
+
+        provenance_output_paths = {output_rule.path for output_rule in provenance.output_lineage}
+        if provenance_output_paths != output_paths:
+            raise ValueError("provenance output lineage must cover every required output exactly")
+        profile_ancestors = {
+            profile: tuple(rule.required_ancestors)
+            for profile, rule in provenance.input_profiles.items()
+        }
+        for output_rule in provenance.output_lineage:
+            if output_rule.required_ancestors_by_profile != profile_ancestors:
+                raise ValueError(
+                    f"output {output_rule.path!r} must derive from the complete active input profile"
+                )
+        for intermediate_rule in provenance.intermediate_artifacts:
+            if set(intermediate_rule.required_ancestors_by_profile) != expected_profiles:
+                raise ValueError(
+                    f"intermediate {intermediate_rule.path!r} must define every provenance input profile"
+                )
+            for profile, ancestors in intermediate_rule.required_ancestors_by_profile.items():
+                if not set(ancestors) <= set(profile_ancestors[profile]):
+                    raise ValueError(
+                        f"intermediate {intermediate_rule.path!r} uses ancestors outside profile {profile!r}"
+                    )
+
+        stage_entrypoints = {
+            entrypoint
+            for stage in provenance.process_stages
+            for entrypoint in stage.command_entrypoints
+        }
+        lineage_entrypoints = {
+            entrypoint
+            for output_rule in provenance.output_lineage
+            for entrypoint in output_rule.writer_entrypoints
+        }
+        for intermediate_rule in provenance.intermediate_artifacts:
+            lineage_entrypoints.update(intermediate_rule.writer_entrypoints)
+            lineage_entrypoints.update(intermediate_rule.reader_entrypoints)
+        if not lineage_entrypoints <= stage_entrypoints:
+            raise ValueError(
+                "every lineage writer and reader must belong to a required process stage"
+            )
+
+        extraction = provenance.trusted_extraction
+        if extraction.artifact_path != self.measurement.artifact_path:
+            raise ValueError("trusted provenance extraction must bind the measurement artifact")
+        if extraction.extractor_id != self.measurement.extractor_id:
+            raise ValueError("trusted provenance extraction must use the measurement extractor")
+        if extraction.extractor_id != self.positive_control.extractor_id:
+            raise ValueError("measurement and control must share the trusted provenance extractor")
         return self
 
 
@@ -967,6 +1175,19 @@ def _validate_task(task: ControlledTask, strategy_ids: set[str]) -> None:
         if output.path in task.initial_manifest.files:
             raise PilotTaskError(
                 f"{task.task_id} required output {output.path} exists in the initial workspace"
+            )
+    for stage in task.contract.provenance.process_stages:
+        for entrypoint in stage.command_entrypoints:
+            if entrypoint not in task.initial_manifest.files:
+                raise PilotTaskError(
+                    f"{task.task_id} provenance stage entrypoint {entrypoint!r} "
+                    "is not pinned in the initial workspace"
+                )
+    for intermediate in task.contract.provenance.intermediate_artifacts:
+        if intermediate.path in task.initial_manifest.files:
+            raise PilotTaskError(
+                f"{task.task_id} provenance intermediate {intermediate.path!r} "
+                "exists in the initial workspace"
             )
     for strategy_id, strategy in task.oracle.strategies.items():
         if (

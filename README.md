@@ -196,7 +196,7 @@ Stage-1 recovery/diagnosis, `docker commit` checkpointing, and Postgres/S3 stora
 ## Develop
 
 ```bash
-uv run pytest -q             # 263 tests
+uv run pytest -q             # 295 tests
 uv run python -m examples.demo_local        # end-to-end: run ▸ verify ▸ adjudicate ▸ certify ▸ replay
 uv run python -m examples.score_extraction  # scored claim/config extraction vs a real answer key
 ```
@@ -234,6 +234,38 @@ requires Linux plus `strace` 6.6 or newer, with `-ff`, `-yy`, and
 `--kill-on-exit`. Raw trace files are normalized and deleted after their SHA-256
 digests and typed events are retained in the trace and certificate. Run the
 collector inside an isolated Linux VM when the evaluated workload is untrusted.
+
+On macOS, use the Linux provenance image to run both Crucible and the workload
+inside one Linux container:
+
+```bash
+./scripts/run_linux_provenance.sh \
+  benchmarks/provenance/pilot/tasks/pilot_weighted_mean/repo \
+  --out weighted-mean-linux.certificate.json
+```
+
+The launcher builds `docker/provenance.Dockerfile` on first use, bind-mounts this
+checkout, adds `SYS_PTRACE`, disables Docker's ptrace-blocking default seccomp
+profile, disables container networking, and selects `--runner linux-strace`.
+The output path is relative to the checkout and therefore remains on the host.
+Use `--rebuild` after changing the Dockerfile or lockfile, or `--image TAG` to
+select another image tag.
+
+This is one container, not an agent container plus a provenance sidecar: the
+collector launches and traces the workload as its child. It is suitable for the
+controlled provenance pilot. Because collector and workload share a container,
+it is not a tamper-resistant security boundary for adversarial workloads.
+
+Evaluate the resulting trace against its frozen controlled-task contract:
+
+```bash
+uv run crucible provenance-gate weighted-mean-linux.certificate.json \
+  --task pilot_weighted_mean \
+  --out weighted-mean-linux.gate.json
+```
+
+The gate emits separate evidence and scientific statuses, one result for every
+required predicate, and final-file-version writer and ancestry witnesses.
 
 Still a refinement, not yet done: `docker commit`-based checkpointing (so
 rollback also undoes dependency installs) and an allowlist egress proxy (so the

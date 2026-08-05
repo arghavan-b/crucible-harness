@@ -19,7 +19,7 @@ venv/
 *.sqlite
 .env
 .env.*
-
+*.certificate.json
 # CORE-Bench capsules (downloaded/extracted; not part of the harness)
 /capsule-*/
 capsule-*.tar.gz

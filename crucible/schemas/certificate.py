@@ -17,6 +17,7 @@ from crucible.trace.capture import MonitoredCommandEnvelope, RunCaptureSummary
 
 from .plan import ExecutionPlan
 from .policy import NondeterminismPolicy
+from .provenance import ProvenanceGateDecision
 from .spec import ExperimentSpec
 from .validation import ValidationRecord
 from .verdict import Verdict
@@ -42,11 +43,11 @@ class ReproducibilityCertificate(BaseModel):
         default=None,
         description="Aggregate coverage of command-capture facets; not an admissibility decision.",
     )
-    provenance_adjudication: Literal["not_performed"] = Field(
+    provenance_adjudication: Literal["not_performed"] | ProvenanceGateDecision = Field(
         default="not_performed",
         description=(
-            "The legacy scientific verdict has not yet been gated on causal provenance; "
-            "command capture alone is not an admissibility decision."
+            "Either 'not_performed' or the typed deterministic decision produced by the "
+            "controlled-task provenance gate; command capture alone is not admissibility."
         ),
     )
     verdict: Verdict

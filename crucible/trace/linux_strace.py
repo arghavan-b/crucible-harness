@@ -472,7 +472,10 @@ def parse_strace_trace(
                 if quoted:
                     metadata_path: str | None = _at_path(arguments, cwd)
                 else:
-                    paths = _file_fd_paths(arguments)
+                    all_paths = _all_fd_paths(arguments)
+                    paths = [path for path in all_paths if path.startswith("/")]
+                    if all_paths and not paths:
+                        continue  # pipe, socket, or another decoded non-file descriptor
                     metadata_path = paths[0] if paths else None
                 if metadata_path is None:
                     raise ValueError("metadata syscall had no decoded path")

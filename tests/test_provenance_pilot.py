@@ -37,6 +37,19 @@ VARIANT_IDS = (
     "undeclared_input",
     "failed_control",
 )
+PROVENANCE_PREDICATES = (
+    "executed",
+    "read_declared_input",
+    "fresh",
+    "written_by",
+    "derived_from",
+    "not_derived_from",
+    "metric_extracted_by",
+    "control_passed",
+    "within_budget",
+    "repair_allowed",
+    "scientific_files_unchanged",
+)
 COMMON_STRATEGY_PROFILE = {
     "V1": ("primary", "ADMISSIBLE", "SUPPORTS", "required_pipeline"),
     "V2": (
@@ -105,6 +118,97 @@ def test_pilot_suite_is_explicitly_development_only() -> None:
     assert tuple(task.task_id for task in suite.tasks) == TASK_IDS
     assert all(task.contract.pilot_only is True for task in suite.tasks)
     assert all("excluded" in task.contract.confirmatory_exclusion for task in suite.tasks)
+
+
+def test_each_task_has_a_frozen_final_version_provenance_contract() -> None:
+    suite = load_pilot_suite()
+
+    for task in suite.tasks:
+        provenance = task.contract.provenance
+        assert task.contract.schema_version == 2
+        assert provenance.monitor_profile == "crucible-linux-strace-v1"
+        assert provenance.require_complete_process_tree is True
+        assert provenance.require_complete_file_events is True
+        assert provenance.network_policy == "none"
+        assert provenance.final_version_policy == "last_observed_write_episode"
+        assert provenance.required_predicates == PROVENANCE_PREDICATES
+        assert provenance.trusted_extraction.artifact_path == "outputs/result.json"
+        assert provenance.trusted_extraction.bind_to_final_version is True
+        assert all(rule.fresh_final_version for rule in provenance.output_lineage)
+        assert all(rule.forbid_task_forbidden_ancestors for rule in provenance.output_lineage)
+
+
+def test_weighted_mean_provenance_requires_direct_declared_input_lineage() -> None:
+    contract = load_pilot_suite().task("pilot_weighted_mean").contract.provenance
+
+    assert tuple(contract.input_profiles) == (
+        "standard",
+        "negative_science",
+        "failed_control",
+    )
+    assert contract.input_profiles["standard"].required_ancestors == (
+        "inputs/observations.csv",
+        "inputs/calibration.csv",
+    )
+    assert tuple(stage.stage_id for stage in contract.process_stages) == ("scientific_analysis",)
+    assert contract.process_stages[0].command_entrypoints == (
+        "pipeline.py",
+        "streaming_pipeline.py",
+    )
+    assert contract.intermediate_artifacts == ()
+    assert tuple(rule.path for rule in contract.output_lineage) == ("outputs/result.json",)
+
+
+def test_seeded_comparison_provenance_requires_multistage_lineage() -> None:
+    contract = load_pilot_suite().task("pilot_seeded_comparison").contract.provenance
+
+    assert tuple(stage.stage_id for stage in contract.process_stages) == (
+        "pipeline_runner",
+        "preparation",
+        "summarization",
+    )
+    assert tuple(rule.path for rule in contract.intermediate_artifacts) == ("work/deltas.csv",)
+    intermediate = contract.intermediate_artifacts[0]
+    assert intermediate.writer_entrypoints == ("prepare.py", "prepare_alternative.py")
+    assert intermediate.reader_entrypoints == ("summarize.py",)
+    assert intermediate.required_ancestors_by_profile["negative_science"] == (
+        "conditions/negative_scores.csv",
+    )
+    assert tuple(rule.path for rule in contract.output_lineage) == (
+        "outputs/result.json",
+        "outputs/summary.csv",
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        ("predicate", "frozen predicate vocabulary"),
+        ("output_ancestor", "complete active input profile"),
+        ("unknown_writer", "writer and reader"),
+    ),
+)
+def test_loader_rejects_weakened_provenance_contract(
+    mutation: str,
+    message: str,
+    tmp_path: Path,
+) -> None:
+    copied = _copy_suite(tmp_path)
+    relative = "tasks/pilot_weighted_mean/contract.json"
+    contract_path = copied / relative
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    provenance = contract["provenance"]
+    if mutation == "predicate":
+        provenance["required_predicates"].remove("not_derived_from")
+    elif mutation == "output_ancestor":
+        provenance["output_lineage"][0]["required_ancestors_by_profile"]["standard"].pop()
+    else:
+        provenance["output_lineage"][0]["writer_entrypoints"] = ["unknown.py"]
+    contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+    _repin(copied, relative)
+
+    with pytest.raises(ValueError, match=message):
+        load_pilot_suite(copied)
 
 
 def test_materialization_copies_only_agent_visible_repo(tmp_path: Path) -> None:

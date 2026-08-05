@@ -11,6 +11,7 @@ from .provenance import (
     load_pilot_suite,
     run_fixture_variant,
 )
+from .provenance_gate import evaluate_provenance, gate_certificate
 
 __all__ = [
     "Arm",
@@ -22,6 +23,8 @@ __all__ = [
     "NaiveAgentArm",
     "PilotSuite",
     "PilotTaskError",
+    "evaluate_provenance",
+    "gate_certificate",
     "load_pilot_suite",
     "load_tasks",
     "run_arm",

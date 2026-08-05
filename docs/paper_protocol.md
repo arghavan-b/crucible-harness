@@ -334,6 +334,12 @@ Requires all gating runtime evidence predicates, final-file-version lineage, all
 
 The gate is deterministic for a fixed contract and normalized event trace. Any unsupported predicate results in `INSUFFICIENT`, not a soft pass.
 
+The two development-only pilot tasks instantiate this specification in the versioned
+`provenance` sections of
+`benchmarks/provenance/pilot/tasks/<task_id>/contract.json`. These frozen task contracts define
+the accepted process stages, condition-specific input ancestry, intermediate and final artifact
+lineage, final-write policy, trusted extraction binding, and monitor completeness requirements.
+
 ## 10. Proposed evidence contract and implementation scope
 
 ### 10.1 Runtime predicates

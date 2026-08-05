@@ -390,6 +390,7 @@ class MonitoredCommandEnvelope(_StrictCaptureModel):
     runner_type: str = Field(min_length=1)
     host_platform: str = Field(min_length=1)
     image: str | None = None
+    network_policy: Literal["none", "unrestricted", "unknown"] = "unknown"
     timeout_s: StrictInt = Field(gt=0)
     started_at: float
     finished_at: float
