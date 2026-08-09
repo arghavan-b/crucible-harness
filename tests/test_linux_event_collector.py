@@ -86,8 +86,14 @@ def test_parser_attributes_process_and_file_events(tmp_path: Path) -> None:
     assert rename.workspace_path == "draft.txt"
     assert rename.target_workspace_path == "result.txt"
     assert set(trace.raw_trace_sha256) == {"pid:100", "pid:101"}
+    assert trace.raw_trace_size_bytes == {
+        "pid:100": (tmp_path / "events.100").stat().st_size,
+        "pid:101": (tmp_path / "events.101").stat().st_size,
+    }
     with pytest.raises(TypeError):
         trace.raw_trace_sha256["pid:100"] = "0" * 64  # type: ignore[index]
+    with pytest.raises(TypeError):
+        trace.raw_trace_size_bytes["pid:100"] = 0  # type: ignore[index]
     assert copy.deepcopy(trace) == trace
 
 
@@ -159,6 +165,46 @@ def test_parser_reassembles_blocked_io_and_resolves_dirfd_paths(tmp_path: Path) 
         event.operation == "metadata_write" and event.workspace_path == "nested/input.txt"
         for event in trace.file_events
     )
+
+
+def test_parser_preserves_logical_paths_for_host_annotated_descriptors(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    host_workspace = "/run/host_virtiofs/private/tmp/container-workspace"
+    prefix = tmp_path / "events"
+    (tmp_path / "events.350").write_text(
+        '1710000000.000001 execve("/usr/bin/python3", ["python3"], 0x0) = 0\n'
+        f'1710000000.000002 openat(AT_FDCWD<{workspace}>, "input.txt", '
+        f"O_RDONLY|O_CLOEXEC) = 3<{host_workspace}/input.txt>\n"
+        f'1710000000.000003 openat(AT_FDCWD<{workspace}>, "output.txt", '
+        f"O_WRONLY|O_CREAT|O_TRUNC) = 4<{host_workspace}/output.txt>\n"
+        f"1710000000.000004 sendfile(4<{host_workspace}/output.txt>, "
+        f"3<{host_workspace}/input.txt>, NULL, 7) = 7\n"
+        f'1710000000.000005 write(4<{host_workspace}/output.txt>, "result", 6) = 6\n'
+        "1710000000.000006 +++ exited with 0 +++\n",
+        encoding="utf-8",
+    )
+
+    trace = parse_strace_trace(
+        prefix,
+        working_dir=str(workspace),
+        strace_version="strace -- version 6.9",
+    )
+
+    assert trace.collection_complete
+    transferred = [event for event in trace.file_events if event.operation in {"read", "write"}]
+    assert any(
+        event.operation == "read" and event.workspace_path == "input.txt" for event in transferred
+    )
+    assert (
+        sum(
+            event.bytes_transferred or 0
+            for event in transferred
+            if event.operation == "write" and event.workspace_path == "output.txt"
+        )
+        == 13
+    )
+    assert not any(event.path.startswith(host_workspace) for event in trace.file_events)
 
 
 def _fake_strace(tmp_path: Path) -> Path:

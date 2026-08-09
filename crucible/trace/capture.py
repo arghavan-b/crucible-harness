@@ -310,6 +310,7 @@ class LinuxEventTrace(_StrictCaptureModel):
     process_events: tuple[LinuxProcessEvent, ...]
     file_events: tuple[LinuxFileEvent, ...]
     raw_trace_sha256: Mapping[str, str]
+    raw_trace_size_bytes: Mapping[str, StrictInt] = Field(default_factory=dict)
     collection_complete: StrictBool
     issues: tuple[str, ...] = ()
 
@@ -320,6 +321,15 @@ class LinuxEventTrace(_StrictCaptureModel):
 
     @field_serializer("raw_trace_sha256")
     def _serialize_trace_digests(self, value: Mapping[str, str]) -> dict[str, str]:
+        return dict(value)
+
+    @field_validator("raw_trace_size_bytes", mode="after")
+    @classmethod
+    def _freeze_trace_sizes(cls, value: Mapping[str, StrictInt]) -> Mapping[str, StrictInt]:
+        return _freeze_mapping(value)
+
+    @field_serializer("raw_trace_size_bytes")
+    def _serialize_trace_sizes(self, value: Mapping[str, StrictInt]) -> dict[str, StrictInt]:
         return dict(value)
 
     @model_validator(mode="after")
@@ -349,6 +359,11 @@ class LinuxEventTrace(_StrictCaptureModel):
             if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
                 raise ValueError(f"invalid raw trace SHA-256 for {name!r}")
             digest_pids.add(int(name[4:]))
+        if self.raw_trace_size_bytes:
+            if set(self.raw_trace_size_bytes) != set(self.raw_trace_sha256):
+                raise ValueError("raw trace sizes and digests must name the same traces")
+            if any(size < 0 for size in self.raw_trace_size_bytes.values()):
+                raise ValueError("raw trace sizes cannot be negative")
         if not digest_pids <= known:
             raise ValueError("raw trace digests cannot name an unknown PID")
         if self.collection_complete == bool(self.issues):

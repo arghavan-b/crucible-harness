@@ -9,7 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from crucible.benchmarks.provenance import ControlledTask, load_pilot_suite, run_fixture_variant
+from crucible.benchmarks.provenance import (
+    ControlledTask,
+    compare_gate_decision_to_oracle,
+    load_pilot_suite,
+    run_fixture_variant,
+)
 from crucible.benchmarks.provenance_gate import evaluate_provenance, gate_certificate
 from crucible.certificate.manifest import file_manifest
 from crucible.schemas import ReproducibilityCertificate
@@ -360,11 +365,36 @@ def test_gate_matches_frozen_strategy_matrix(
     certificate = _synthetic_certificate(task, strategy.fixture_variant, workspace)
 
     decision = evaluate_provenance(task, certificate)
+    comparison = compare_gate_decision_to_oracle(task, strategy_id, decision)
 
     assert decision.evidence_status == strategy.evidence_status
     assert decision.scientific_status == strategy.scientific_status
     assert decision.reason_code == strategy.reason_code
     assert len(decision.predicates) == 11
+    assert comparison.matches
+    assert comparison.mismatched_fields == ()
+
+
+def test_oracle_comparison_reports_each_mismatched_decision_field(tmp_path: Path) -> None:
+    task = load_pilot_suite().task("pilot_weighted_mean")
+    workspace = tmp_path / "workspace"
+    run_fixture_variant(task, "primary", workspace)
+    decision = evaluate_provenance(task, _synthetic_certificate(task, "primary", workspace))
+
+    comparison = compare_gate_decision_to_oracle(task, "I6", decision)
+
+    assert not comparison.matches
+    assert comparison.mismatched_fields == (
+        "evidence_status",
+        "scientific_status",
+        "reason_code",
+    )
+    assert comparison.expected_evidence_status == "INVALID"
+    assert comparison.observed_evidence_status == "ADMISSIBLE"
+    assert comparison.expected_scientific_status == "UNDETERMINED"
+    assert comparison.observed_scientific_status == "SUPPORTS"
+    assert comparison.expected_reason_code == "positive_control_failed"
+    assert comparison.observed_reason_code == "required_pipeline"
 
 
 def test_incomplete_trace_is_insufficient_even_when_observed_path_is_valid(tmp_path: Path) -> None:

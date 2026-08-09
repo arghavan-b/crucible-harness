@@ -19,6 +19,8 @@ from crucible.benchmarks.provenance import (
     ResultSchema,
     VariantOracle,
     load_pilot_suite,
+    run_fixture_matrix,
+    run_fixture_strategy,
     run_fixture_variant,
 )
 from crucible.certificate.manifest import file_manifest
@@ -249,6 +251,51 @@ def test_every_construction_variant_is_executable(
     )
     expected_timeout = "process_tree_timeout" if os.name == "posix" else "top_level_timeout"
     assert execution.enforced_constraints[2] == expected_timeout
+
+
+def test_fixture_matrix_creates_and_removes_one_workspace_per_task_strategy(
+    tmp_path: Path,
+) -> None:
+    suite = load_pilot_suite()
+    workspace_parent = tmp_path / "matrix_workspaces"
+    executions = run_fixture_matrix(
+        suite,
+        task_ids=TASK_IDS,
+        strategy_ids=("V1", "I6"),
+        workspace_parent=workspace_parent,
+    )
+
+    assert [
+        (execution.task_id, execution.strategy_id, execution.variant_id) for execution in executions
+    ] == [
+        ("pilot_weighted_mean", "V1", "primary"),
+        ("pilot_weighted_mean", "I6", "failed_control"),
+        ("pilot_seeded_comparison", "V1", "primary"),
+        ("pilot_seeded_comparison", "I6", "failed_control"),
+    ]
+    assert workspace_parent.is_dir()
+    assert list(workspace_parent.iterdir()) == []
+
+
+def test_fixture_strategy_cleans_workspace_when_execution_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import crucible.benchmarks.provenance as provenance
+
+    task = load_pilot_suite().task("pilot_weighted_mean")
+    observed_workspaces: list[Path] = []
+
+    def fail_after_materialization(task, variant_id, workspace):
+        root = task.materialize(workspace)
+        observed_workspaces.append(root)
+        raise PilotTaskError(f"forced failure for {variant_id}")
+
+    monkeypatch.setattr(provenance, "run_fixture_variant", fail_after_materialization)
+    with pytest.raises(PilotTaskError, match="forced failure"):
+        run_fixture_strategy(task, "V1", workspace_parent=tmp_path / "failed")
+
+    assert len(observed_workspaces) == 1
+    assert not observed_workspaces[0].exists()
 
 
 def test_strategy_oracles_have_the_frozen_protocol_profile() -> None:

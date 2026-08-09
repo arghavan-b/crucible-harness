@@ -73,13 +73,47 @@ From the repository root:
 python scripts/check_provenance_pilots.py
 ```
 
-The command verifies both initial manifests, creates a clean workspace per variant, executes all
-20 trusted fixture variants, and checks their numeric outputs and positive controls. This local
-construction check enforces Python `>=3.12`, a sanitized child environment, and a process-tree
-timeout on POSIX systems (a top-level timeout elsewhere). It does **not** enforce network
+The command verifies both initial manifests, creates a clean workspace per task/strategy, executes
+all 20 trusted fixture strategies, and checks their numeric outputs and positive controls. Use
+`--task` and `--strategy` to select a subset. This local construction check enforces Python
+`>=3.12`, a sanitized child environment, and a process-tree timeout on POSIX systems (a top-level
+timeout elsewhere). It does **not** enforce network
 isolation or the contract's Linux monitor platform, and
 it does not run a provenance monitor. Its scientific status is explicitly reported as *ungated*;
 the command makes no evidence-admissibility claim.
+
+## Frozen Linux container capture
+
+Run the frozen task/strategy commands under the production Linux collector with:
+
+```bash
+uv run python scripts/run_linux_provenance_matrix.py \
+  --output-dir provenance-certificates
+```
+
+Use repeatable `--task` and `--strategy` options to capture a subset, and `--rebuild` to rebuild
+the provenance image first. Every pair gets a newly materialized workspace and exactly one
+frozen command; no planner or repair loop runs in the container. The Docker invocation mounts only
+that workspace at `/experiment` and a staging certificate directory at `/output`, with networking
+disabled. The host resolves the image tag to an immutable digest before execution, and that digest
+is both executed and recorded in the certificate. The contract, oracle, construction label, and
+repository checkout remain on the trusted host side. Each pair retains two separate host-side
+artifacts:
+
+- `<task>/<strategy>.raw.certificate.json` is the untouched container capture and keeps
+  `provenance_adjudication` set to `"not_performed"`.
+- `<task>/<strategy>.gate.json` is the typed deterministic decision evaluated from that raw
+  certificate.
+- `<task>/<strategy>.metrics.json` records command runtime in seconds, total raw per-PID strace
+  size in bytes, normalized process-plus-file event count, and host-side gate latency in seconds.
+
+No retained artifact is overwritten. A non-admissible decision is retained as a normal matrix
+result; it does not turn an otherwise successful capture-and-gate run into a launcher failure.
+After the raw certificate and gate decision are safely written, the host compares the decision's
+evidence status, scientific status, and reason code with the frozen hidden oracle. The oracle is
+never mounted into the container or used by the gate logic. All selected pairs run even if a
+comparison fails; the launcher reports every mismatched field and exits `1` after the matrix is
+complete when any mismatch occurred.
 
 ## Current go/no-go status
 

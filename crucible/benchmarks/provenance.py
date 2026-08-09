@@ -23,9 +23,11 @@ import signal
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+import tempfile
+from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Iterable, Iterator, Literal
 
 from pydantic import (
     BaseModel,
@@ -42,6 +44,7 @@ from crucible.certificate.manifest import file_manifest, sha256_file
 from crucible.schemas.provenance import (
     PROVENANCE_PREDICATES,
     EvidenceStatus,
+    ProvenanceGateDecision,
     ProvenancePredicate,
     ScientificStatus,
 )
@@ -689,6 +692,70 @@ class FixtureExecution:
     check: ScientificCheck
     enforced_constraints: tuple[str, ...]
     unenforced_constraints: tuple[str, ...]
+    strategy_id: str | None = None
+
+
+@dataclass(frozen=True)
+class StrategyWorkspace:
+    task_id: str
+    strategy_id: str
+    variant_id: str
+    root: Path
+    command: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OracleComparison:
+    task_id: str
+    strategy_id: str
+    expected_evidence_status: EvidenceStatus
+    observed_evidence_status: EvidenceStatus
+    expected_scientific_status: ScientificStatus
+    observed_scientific_status: ScientificStatus
+    expected_reason_code: str
+    observed_reason_code: str
+    mismatched_fields: tuple[str, ...]
+
+    @property
+    def matches(self) -> bool:
+        return not self.mismatched_fields
+
+
+def compare_gate_decision_to_oracle(
+    task: ControlledTask,
+    strategy_id: str,
+    decision: ProvenanceGateDecision,
+) -> OracleComparison:
+    """Compare a completed gate decision with the host-only frozen oracle."""
+    if decision.task_id != task.task_id:
+        raise PilotTaskError(
+            f"gate decision for {decision.task_id!r} cannot be compared with {task.task_id!r}"
+        )
+    try:
+        expected = task.oracle.strategies[strategy_id]
+    except KeyError as exc:
+        raise PilotTaskError(f"{task.task_id} has no strategy {strategy_id!r}") from exc
+
+    mismatched_fields = tuple(
+        field
+        for field, expected_value, observed_value in (
+            ("evidence_status", expected.evidence_status, decision.evidence_status),
+            ("scientific_status", expected.scientific_status, decision.scientific_status),
+            ("reason_code", expected.reason_code, decision.reason_code),
+        )
+        if expected_value != observed_value
+    )
+    return OracleComparison(
+        task_id=task.task_id,
+        strategy_id=strategy_id,
+        expected_evidence_status=expected.evidence_status,
+        observed_evidence_status=decision.evidence_status,
+        expected_scientific_status=expected.scientific_status,
+        observed_scientific_status=decision.scientific_status,
+        expected_reason_code=expected.reason_code,
+        observed_reason_code=decision.reason_code,
+        mismatched_fields=mismatched_fields,
+    )
 
 
 def _portable_manifest(root: Path) -> dict[str, str]:
@@ -1372,15 +1439,112 @@ def run_fixture_variant(
     )
 
 
+@contextmanager
+def clean_strategy_workspace(
+    task: ControlledTask,
+    strategy_id: str,
+    *,
+    workspace_parent: str | Path | None = None,
+) -> Iterator[StrategyWorkspace]:
+    """Yield a unique, nonexistent workspace path for one frozen strategy.
+
+    Workspace ownership lives here rather than with callers: the directory does
+    not exist before materialization, is unique to this task/strategy pair, and
+    is removed on success or failure. Construction labels remain harness-side;
+    only the task's ``repo/`` tree is copied into the workspace.
+    """
+    try:
+        strategy = task.oracle.strategies[strategy_id]
+    except KeyError as exc:
+        raise PilotTaskError(f"{task.task_id} has no strategy {strategy_id!r}") from exc
+    if strategy.fixture_variant is None:
+        raise PilotTaskError(f"{task.task_id}/{strategy_id} has no executable fixture variant")
+
+    parent = Path(workspace_parent) if workspace_parent is not None else None
+    if parent is not None:
+        parent.mkdir(parents=True, exist_ok=True)
+    prefix = f"{task.task_id}_{strategy_id}_"
+    with tempfile.TemporaryDirectory(prefix=prefix, dir=parent) as temporary:
+        variant = task.oracle.variants[strategy.fixture_variant]
+        yield StrategyWorkspace(
+            task_id=task.task_id,
+            strategy_id=strategy_id,
+            variant_id=strategy.fixture_variant,
+            root=Path(temporary) / "workspace",
+            command=variant.command,
+        )
+
+
+def run_fixture_strategy(
+    task: ControlledTask,
+    strategy_id: str,
+    *,
+    workspace_parent: str | Path | None = None,
+) -> FixtureExecution:
+    """Execute one strategy locally in its own clean, short-lived workspace."""
+    with clean_strategy_workspace(
+        task,
+        strategy_id,
+        workspace_parent=workspace_parent,
+    ) as workspace:
+        execution = run_fixture_variant(task, workspace.variant_id, workspace.root)
+    return replace(execution, strategy_id=strategy_id)
+
+
+def run_fixture_matrix(
+    suite: PilotSuite,
+    *,
+    task_ids: Iterable[str] | None = None,
+    strategy_ids: Iterable[str] | None = None,
+    workspace_parent: str | Path | None = None,
+) -> tuple[FixtureExecution, ...]:
+    """Run selected task/strategy pairs with a clean workspace for every pair."""
+    selected_tasks = tuple(task_ids) if task_ids is not None else suite.manifest.task_ids
+    selected_strategies = (
+        tuple(strategy_ids) if strategy_ids is not None else suite.manifest.strategy_ids
+    )
+    if len(set(selected_tasks)) != len(selected_tasks):
+        raise PilotTaskError("task selection contains duplicate IDs")
+    if len(set(selected_strategies)) != len(selected_strategies):
+        raise PilotTaskError("strategy selection contains duplicate IDs")
+
+    available_tasks = {task.task_id: task for task in suite.tasks}
+    unknown_tasks = set(selected_tasks) - set(available_tasks)
+    if unknown_tasks:
+        raise PilotTaskError("unknown task(s): " + ", ".join(sorted(unknown_tasks)))
+    unknown_strategies = set(selected_strategies) - set(suite.manifest.strategy_ids)
+    if unknown_strategies:
+        raise PilotTaskError("unknown strategy(s): " + ", ".join(sorted(unknown_strategies)))
+
+    executions: list[FixtureExecution] = []
+    for task_id in selected_tasks:
+        task = available_tasks[task_id]
+        for strategy_id in selected_strategies:
+            executions.append(
+                run_fixture_strategy(
+                    task,
+                    strategy_id,
+                    workspace_parent=workspace_parent,
+                )
+            )
+    return tuple(executions)
+
+
 __all__ = [
     "ControlledTask",
     "ControlledTaskContract",
     "DEFAULT_PILOT_ROOT",
     "FixtureExecution",
+    "OracleComparison",
     "PilotSuite",
     "PilotSuiteManifest",
     "PilotTaskError",
     "ScientificCheck",
+    "StrategyWorkspace",
+    "clean_strategy_workspace",
+    "compare_gate_decision_to_oracle",
     "load_pilot_suite",
+    "run_fixture_matrix",
+    "run_fixture_strategy",
     "run_fixture_variant",
 ]

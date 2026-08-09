@@ -206,6 +206,48 @@ def provenance_gate(
     raise typer.Exit(code=exit_code)
 
 
+@app.command("provenance-capture")
+def provenance_capture(
+    workspace: str = typer.Argument(..., help="Clean controlled-task workspace."),
+    experiment_id: str = typer.Option(..., "--experiment-id", help="Frozen run ID."),
+    command_json: str = typer.Option(
+        ..., "--command-json", help="Frozen command argv encoded as a JSON array."
+    ),
+    out: str = typer.Option(..., "--out", help="Write the monitored certificate here."),
+    timeout_s: int = typer.Option(..., "--timeout-s", min=1, help="Frozen runtime budget."),
+    container_digest: str = typer.Option(
+        ..., "--container-digest", help="Digest of the Linux provenance image."
+    ),
+) -> None:
+    """Run one frozen argv under the Linux provenance collector without planning."""
+    import json
+
+    from crucible.benchmarks.provenance_capture import capture_frozen_command
+
+    try:
+        raw_command = json.loads(command_json)
+        if not isinstance(raw_command, list) or not all(
+            isinstance(token, str) for token in raw_command
+        ):
+            raise ValueError("--command-json must be a JSON array of strings")
+        capture = capture_frozen_command(
+            workspace,
+            raw_command,
+            experiment_id=experiment_id,
+            output_path=out,
+            timeout_s=timeout_s,
+            container_digest=container_digest,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"provenance capture: {exc}")
+        raise typer.Exit(code=2) from None
+
+    typer.echo(f"command:     {capture.submitted_command}")
+    typer.echo(f"trace:       {capture.run.trace_id}")
+    typer.echo(f"certificate: {out}")
+    raise typer.Exit(code=0 if capture.run.all_succeeded else 4)
+
+
 @app.command()
 def intake(
     repo_dir: str = typer.Argument(..., help="Path to a local repo to analyze."),

@@ -113,6 +113,7 @@ _TIMESTAMPED_LINE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s+(.*)$")
 _SYSCALL_LINE = re.compile(r"^([a-zA-Z0-9_]+)\((.*)\)\s+=\s+(.+)$")
 _QUOTED = re.compile(r'"(?:\\.|[^"\\])*"')
 _FD_PATH = re.compile(r"(?:\b\d+|AT_FDCWD)<([^>]*)>")
+_FD_ENTRY = re.compile(r"(?:(\d+)|AT_FDCWD)<([^>]*)>")
 _RESUMED = re.compile(r"^<\.\.\. ([a-zA-Z0-9_]+) resumed>(.*)$")
 _EXITED = re.compile(r"^\+\+\+ exited with (\d+) \+\+\+$")
 _KILLED = re.compile(r"^\+\+\+ killed by ([A-Z0-9]+)(?: \([^)]*\))? \+\+\+$")
@@ -194,6 +195,10 @@ def _file_fd_paths(text: str) -> list[str]:
     return [path for path in _all_fd_paths(text) if path.startswith("/")]
 
 
+def _fd_entries(text: str) -> list[tuple[int | None, str]]:
+    return [(int(number) if number else None, path) for number, path in _FD_ENTRY.findall(text)]
+
+
 def _normalize_path(path: str, cwd: str) -> str:
     if path.startswith("/"):
         return os.path.normpath(path)
@@ -237,9 +242,12 @@ def _at_path(arguments: str, cwd: str, *, path_index: int = 0, dir_index: int = 
     return _normalize_path(quoted[path_index], base)
 
 
-def _read_trace_files(prefix: Path) -> tuple[list[_RawLine], dict[str, str], set[int], list[str]]:
+def _read_trace_files(
+    prefix: Path,
+) -> tuple[list[_RawLine], dict[str, str], dict[str, int], set[int], list[str]]:
     lines: list[_RawLine] = []
     digests: dict[str, str] = {}
+    sizes: dict[str, int] = {}
     pids: set[int] = set()
     issues: list[str] = []
     for path in sorted(prefix.parent.glob(f"{prefix.name}.*")):
@@ -249,7 +257,9 @@ def _read_trace_files(prefix: Path) -> tuple[list[_RawLine], dict[str, str], set
         pid = int(suffix)
         pids.add(pid)
         payload = path.read_bytes()
-        digests[f"pid:{pid}"] = hashlib.sha256(payload).hexdigest()
+        logical_name = f"pid:{pid}"
+        digests[logical_name] = hashlib.sha256(payload).hexdigest()
+        sizes[logical_name] = len(payload)
         try:
             text = payload.decode("utf-8")
         except UnicodeDecodeError:
@@ -302,7 +312,7 @@ def _read_trace_files(prefix: Path) -> tuple[list[_RawLine], dict[str, str], set
     if not pids:
         raise LinuxTraceParseError("strace produced no per-PID trace files")
     lines.sort(key=lambda line: (line.timestamp_s, line.pid, line.line_number))
-    return lines, digests, pids, issues
+    return lines, digests, sizes, pids, issues
 
 
 def parse_strace_trace(
@@ -313,11 +323,12 @@ def parse_strace_trace(
     collection_issue: str | None = None,
 ) -> LinuxEventTrace:
     """Parse ``strace -ff -ttt -yy`` output rooted at ``prefix``."""
-    raw_lines, digests, process_ids, issues = _read_trace_files(Path(prefix))
+    raw_lines, digests, sizes, process_ids, issues = _read_trace_files(Path(prefix))
     if collection_issue:
         issues.append(collection_issue)
 
     cwd_by_pid: dict[int, str] = {pid: os.path.abspath(working_dir) for pid in process_ids}
+    fd_paths_by_pid: dict[int, dict[int, str]] = {pid: {} for pid in process_ids}
     child_pids: set[int] = set()
     process_events: list[LinuxProcessEvent] = []
     file_events: list[LinuxFileEvent] = []
@@ -373,6 +384,28 @@ def parse_strace_trace(
         )
         sequence += 1
 
+    def resolved_fd_paths(pid: int, text: str) -> list[str]:
+        """Resolve FD annotations to the paths used inside the container."""
+        tracked = fd_paths_by_pid.get(pid, {})
+        return [tracked.get(fd, path) if fd is not None else path for fd, path in _fd_entries(text)]
+
+    def resolved_at_path(
+        pid: int,
+        arguments: str,
+        cwd: str,
+        *,
+        path_index: int = 0,
+        dir_index: int = 0,
+    ) -> str | None:
+        quoted = _quoted_arguments(arguments)
+        if len(quoted) <= path_index:
+            return None
+        directory_paths = [
+            path for path in resolved_fd_paths(pid, arguments) if path.startswith("/")
+        ]
+        base = directory_paths[dir_index] if len(directory_paths) > dir_index else cwd
+        return _normalize_path(quoted[path_index], base)
+
     for line in raw_lines:
         cwd = cwd_by_pid.setdefault(line.pid, os.path.abspath(working_dir))
         body = line.body
@@ -405,7 +438,7 @@ def parse_strace_trace(
         try:
             if syscall in {"execve", "execveat"}:
                 executable = (
-                    _at_path(arguments, cwd)
+                    resolved_at_path(line.pid, arguments, cwd)
                     if syscall == "execveat"
                     else _path_argument(arguments, cwd)
                 )
@@ -419,6 +452,7 @@ def parse_strace_trace(
                 child_pids.add(result)
                 process_ids.add(result)
                 cwd_by_pid[result] = cwd
+                fd_paths_by_pid[result] = dict(fd_paths_by_pid.get(line.pid, {}))
                 process_event(line, operation="spawn", child_pid=result)
             elif syscall == "chdir":
                 destination = _path_argument(arguments, cwd)
@@ -426,20 +460,24 @@ def parse_strace_trace(
                     raise ValueError("missing chdir path")
                 cwd_by_pid[line.pid] = destination
             elif syscall == "fchdir":
-                paths = _file_fd_paths(arguments)
+                paths = [
+                    path for path in resolved_fd_paths(line.pid, arguments) if path.startswith("/")
+                ]
                 if not paths:
                     raise ValueError("fchdir file descriptor had no decoded path")
                 cwd_by_pid[line.pid] = paths[0]
             elif syscall in {"open", "openat", "openat2", "creat"}:
-                returned_paths = _file_fd_paths(result_text)
-                if returned_paths:
-                    opened_path: str | None = returned_paths[-1]
-                elif syscall in {"openat", "openat2"}:
-                    opened_path = _at_path(arguments, cwd)
+                if syscall in {"openat", "openat2"}:
+                    opened_path = resolved_at_path(line.pid, arguments, cwd)
                 else:
                     opened_path = _path_argument(arguments, cwd)
                 if opened_path is None:
+                    returned_paths = _file_fd_paths(result_text)
+                    opened_path = returned_paths[-1] if returned_paths else None
+                if opened_path is None:
                     raise ValueError("open result had no decoded path")
+                if result is not None:
+                    fd_paths_by_pid.setdefault(line.pid, {})[result] = opened_path
                 write_intent = syscall == "creat" or any(
                     flag in arguments
                     for flag in ("O_WRONLY", "O_RDWR", "O_CREAT", "O_TRUNC", "O_APPEND")
@@ -447,8 +485,10 @@ def parse_strace_trace(
                 operation: LinuxFileOperation = "open_write" if write_intent else "open_read"
                 file_event(line, operation, opened_path)
             elif syscall in _READ_CALLS | _WRITE_CALLS:
+                fd = _integer_result(arguments)
+                logical_path = fd_paths_by_pid.get(line.pid, {}).get(fd) if fd is not None else None
                 paths = _file_fd_paths(arguments)
-                if not paths:
+                if logical_path is None and not paths:
                     if _all_fd_paths(arguments):
                         continue  # pipe, socket, or other non-file descriptor
                     raise ValueError("I/O file descriptor had no decoded path")
@@ -456,11 +496,34 @@ def parse_strace_trace(
                 file_event(
                     line,
                     "read" if syscall in _READ_CALLS else "write",
-                    paths[0],
+                    logical_path or paths[0],
                     bytes_transferred=result,
                 )
+            elif syscall == "close":
+                fd = _integer_result(arguments)
+                if fd is not None:
+                    fd_paths_by_pid.get(line.pid, {}).pop(fd, None)
+            elif syscall in {"dup", "dup2", "dup3", "fcntl"}:
+                if syscall == "fcntl" and "F_DUPFD" not in arguments:
+                    continue
+                old_fd = _integer_result(arguments)
+                if syscall in {"dup2", "dup3"}:
+                    argument_parts = arguments.split(",", 2)
+                    new_fd = _integer_result(argument_parts[1]) if len(argument_parts) > 1 else None
+                else:
+                    new_fd = result
+                old_path = (
+                    fd_paths_by_pid.get(line.pid, {}).get(old_fd) if old_fd is not None else None
+                )
+                if new_fd is not None:
+                    if old_path is None:
+                        fd_paths_by_pid.get(line.pid, {}).pop(new_fd, None)
+                    else:
+                        fd_paths_by_pid.setdefault(line.pid, {})[new_fd] = old_path
             elif syscall in {"mmap", "mmap2"}:
-                paths = _file_fd_paths(arguments)
+                paths = [
+                    path for path in resolved_fd_paths(line.pid, arguments) if path.startswith("/")
+                ]
                 if not paths:
                     continue  # anonymous mapping
                 if "PROT_READ" in arguments:
@@ -470,9 +533,9 @@ def parse_strace_trace(
             elif syscall in _METADATA_CALLS:
                 quoted = _quoted_arguments(arguments)
                 if quoted:
-                    metadata_path: str | None = _at_path(arguments, cwd)
+                    metadata_path: str | None = resolved_at_path(line.pid, arguments, cwd)
                 else:
-                    all_paths = _all_fd_paths(arguments)
+                    all_paths = resolved_fd_paths(line.pid, arguments)
                     paths = [path for path in all_paths if path.startswith("/")]
                     if all_paths and not paths:
                         continue  # pipe, socket, or another decoded non-file descriptor
@@ -481,9 +544,10 @@ def parse_strace_trace(
                     raise ValueError("metadata syscall had no decoded path")
                 file_event(line, "metadata_read", metadata_path, bytes_transferred=result)
             elif syscall in {"getdents", "getdents64"}:
-                paths = _file_fd_paths(arguments)
+                all_paths = resolved_fd_paths(line.pid, arguments)
+                paths = [path for path in all_paths if path.startswith("/")]
                 if not paths:
-                    if _all_fd_paths(arguments):
+                    if all_paths:
                         continue
                     raise ValueError("directory descriptor had no decoded path")
                 assert result is not None
@@ -492,7 +556,9 @@ def parse_strace_trace(
                 quoted = _quoted_arguments(arguments)
                 if len(quoted) < 2:
                     raise ValueError("rename syscall had fewer than two paths")
-                directory_paths = _file_fd_paths(arguments)
+                directory_paths = [
+                    path for path in resolved_fd_paths(line.pid, arguments) if path.startswith("/")
+                ]
                 source_base = directory_paths[0] if directory_paths else cwd
                 target_base = directory_paths[1] if len(directory_paths) > 1 else cwd
                 source = _normalize_path(quoted[0], source_base)
@@ -500,7 +566,7 @@ def parse_strace_trace(
                 file_event(line, "rename", source, target_path=target)
             elif syscall in {"unlink", "unlinkat"}:
                 unlinked_path = (
-                    _at_path(arguments, cwd)
+                    resolved_at_path(line.pid, arguments, cwd)
                     if syscall == "unlinkat"
                     else _path_argument(arguments, cwd)
                 )
@@ -509,7 +575,7 @@ def parse_strace_trace(
                 file_event(line, "unlink", unlinked_path)
             elif syscall in {"mkdir", "mkdirat", "rmdir", "mknod", "mknodat"}:
                 namespace_path = (
-                    _at_path(arguments, cwd)
+                    resolved_at_path(line.pid, arguments, cwd)
                     if syscall in {"mkdirat", "mknodat"}
                     else _path_argument(arguments, cwd)
                 )
@@ -518,7 +584,7 @@ def parse_strace_trace(
                 file_event(line, "namespace_write", namespace_path)
             elif syscall in {"symlink", "symlinkat"}:
                 link_path = (
-                    _at_path(arguments, cwd, path_index=1)
+                    resolved_at_path(line.pid, arguments, cwd, path_index=1)
                     if syscall == "symlinkat"
                     else _path_argument(arguments, cwd, index=1)
                 )
@@ -529,7 +595,9 @@ def parse_strace_trace(
                 quoted = _quoted_arguments(arguments)
                 if len(quoted) < 2:
                     raise ValueError("link syscall had fewer than two paths")
-                directory_paths = _file_fd_paths(arguments)
+                directory_paths = [
+                    path for path in resolved_fd_paths(line.pid, arguments) if path.startswith("/")
+                ]
                 source_base = directory_paths[0] if directory_paths else cwd
                 target_base = directory_paths[1] if len(directory_paths) > 1 else cwd
                 source = _normalize_path(quoted[0], source_base)
@@ -538,20 +606,29 @@ def parse_strace_trace(
                 file_event(line, "namespace_write", target)
             elif syscall in _METADATA_WRITE_CALLS:
                 if syscall in _METADATA_FD_WRITE_CALLS:
-                    paths = _file_fd_paths(arguments)
+                    paths = [
+                        path
+                        for path in resolved_fd_paths(line.pid, arguments)
+                        if path.startswith("/")
+                    ]
                     metadata_write_path = paths[0] if paths else None
                 else:
-                    metadata_write_path = _at_path(arguments, cwd)
+                    metadata_write_path = resolved_at_path(line.pid, arguments, cwd)
                 if metadata_write_path is None:
                     raise ValueError("metadata mutation had no decoded path")
                 file_event(line, "metadata_write", metadata_write_path)
             elif syscall in {"truncate", "ftruncate", "fallocate"}:
-                truncated_path = _fd_or_path(arguments, result_text, cwd)
+                logical_paths = [
+                    path for path in resolved_fd_paths(line.pid, arguments) if path.startswith("/")
+                ]
+                truncated_path = (
+                    logical_paths[0] if logical_paths else _fd_or_path(arguments, result_text, cwd)
+                )
                 if truncated_path is None:
                     raise ValueError("truncate syscall had no decoded path")
                 file_event(line, "truncate", truncated_path)
             elif syscall in {"sendfile", "sendfile64", "copy_file_range", "splice"}:
-                paths = _all_fd_paths(arguments)
+                paths = resolved_fd_paths(line.pid, arguments)
                 if len(paths) < 2:
                     raise ValueError("file transfer descriptors lacked decoded paths")
                 assert result is not None
@@ -596,6 +673,7 @@ def parse_strace_trace(
         process_events=tuple(process_events),
         file_events=tuple(file_events),
         raw_trace_sha256=digests,
+        raw_trace_size_bytes=sizes,
         collection_complete=not issues,
         issues=tuple(issues),
     )
