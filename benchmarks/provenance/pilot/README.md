@@ -115,6 +115,42 @@ never mounted into the container or used by the gate logic. All selected pairs r
 comparison fails; the launcher reports every mismatched field and exits `1` after the matrix is
 complete when any mismatch occurred.
 
+## Comparing the provenance gate with the freshness baseline
+
+`P` (the full gate) and `B3` (protocol §9's filesystem-freshness baseline) are scored on the
+*same* captured execution, so adding a comparator costs no extra runs and cannot perturb the
+trace it is scored on:
+
+```bash
+uv run python scripts/compare_verifiers.py --input-dir provenance-certificates
+```
+
+The script reads each retained `<task>/<strategy>.raw.certificate.json`, prefers the retained
+`<strategy>.gate.json` for `P` over recomputing it, and prints per-execution outcomes plus
+false-verification rate, valid-run coverage, selective risk, and the paired per-task deltas of
+§11.1--§11.3. These are point estimates: §12's task-cluster bootstrap, permutation test, and
+Wilson intervals are **not** implemented, so no confirmatory claim follows from this output.
+
+B3 may read initial and final content hashes and file creation/write observations. It is
+withheld read-dependency edges, forbidden ancestors, final-version lineage, and writer
+attribution — those four signals are the treatment, and `tests/test_baselines.py` asserts the
+isolation rather than leaving it to review.
+
+One B3 design choice **must be frozen before confirmatory scoring**: whether B3 also gates on
+the task's positive control. The default is *yes* (`REQUIRE_POSITIVE_CONTROL_DEFAULT` in
+`crucible/benchmarks/baselines.py`), the stronger baseline — the control is a
+scientific-validity signal any verifier holding the contract can compute, not a provenance
+signal, and B2 already gates on it. Isolating provenance means giving the baseline everything
+*except* provenance.
+
+On these two pilot tasks the setting does not change the false-verification rate: the
+`pilot-json-v1` extractor already returns `UNDETERMINED` when a control fails, so an ungated B3
+abstains on I6 regardless. The flag changes B3's evidence decision and abstention reason only.
+That is a property of this extractor, not a law — an evaluation task whose extractor still
+emits a status under a failed control would separate the settings, which is why the flag is
+frozen rather than left open. `--freshness-ignores-control` is for a pre-registered sensitivity
+analysis, not post-hoc selection.
+
 ## Current go/no-go status
 
 The Linux collector records process identity and parentage, workspace reads, write episodes,

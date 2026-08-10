@@ -2,6 +2,17 @@
 
 from __future__ import annotations
 
+from .controlled import (
+    PairedTaskDelta,
+    ScoredExecution,
+    StrategyGroundTruth,
+    SystemScore,
+    TaskScore,
+    oracle_ground_truth,
+    paired_task_deltas,
+    render_comparison,
+    score_system,
+)
 from .table import (
     ArmMetrics,
     HarnessRow,
@@ -14,8 +25,17 @@ from .table import (
 __all__ = [
     "ArmMetrics",
     "HarnessRow",
+    "PairedTaskDelta",
+    "ScoredExecution",
+    "StrategyGroundTruth",
+    "SystemScore",
+    "TaskScore",
     "classify",
+    "oracle_ground_truth",
+    "paired_task_deltas",
+    "render_comparison",
     "render_table",
     "run_comparison",
     "score_arm",
+    "score_system",
 ]

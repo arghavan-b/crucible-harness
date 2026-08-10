@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import hashlib
 import shlex
-import tempfile
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 from crucible.schemas import ReproducibilityCertificate
 from crucible.schemas.provenance import (
@@ -34,7 +33,12 @@ from crucible.trace.capture import (
     MonitoredCommandEnvelope,
 )
 
-from .provenance import ControlledTask, PilotTaskError, ScientificCheck
+from .provenance import (
+    ControlledTask,
+    PilotTaskError,
+    ScientificCheck,
+    extract_from_artifact_contents,
+)
 
 
 _CONTENT_READS = frozenset({"open_read", "read", "mmap_read"})
@@ -317,20 +321,6 @@ def _select_input_profile(task: ControlledTask, ancestors: set[str]) -> tuple[st
     if not matched:
         return "standard", True
     return "standard", False
-
-
-def _materialize_and_extract(
-    task: ControlledTask,
-    artifact_contents: dict[str, str],
-) -> ScientificCheck:
-    with tempfile.TemporaryDirectory(prefix="crucible_provenance_extract_") as directory:
-        root = Path(directory)
-        for output in task.contract.required_outputs:
-            content = artifact_contents[output.path]
-            path = root / PurePosixPath(output.path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-        return task.extract_and_evaluate(root)
 
 
 def _has_irrelevant_python_child(graph: _TraceGraph) -> bool:
@@ -659,7 +649,7 @@ def evaluate_provenance(
     scientific_check: ScientificCheck | None = None
     if not extraction_errors:
         try:
-            scientific_check = _materialize_and_extract(task, artifact_contents)
+            scientific_check = extract_from_artifact_contents(task, artifact_contents)
         except (KeyError, OSError, PilotTaskError, UnicodeError, ValueError) as exc:
             extraction_errors.append(str(exc))
     if extraction_errors:

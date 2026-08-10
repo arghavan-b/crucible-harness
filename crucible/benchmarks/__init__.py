@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from .arms import Arm, ArmOutcome, HarnessOnArm, NaiveAgentArm, run_arm
+from .baselines import (
+    FRESHNESS_SYSTEM_ID,
+    PROVENANCE_SYSTEM_ID,
+    REQUIRE_POSITIVE_CONTROL_DEFAULT,
+    SystemDecision,
+    evaluate_filesystem_freshness,
+    project_gate_decision,
+)
 from .corebench import BenchTask, GroundTruth, load_tasks, stratified_sample, synthetic_tasks
 from .provenance import (
     ControlledTask,
@@ -12,6 +20,7 @@ from .provenance import (
     StrategyWorkspace,
     clean_strategy_workspace,
     compare_gate_decision_to_oracle,
+    extract_from_artifact_contents,
     load_pilot_suite,
     run_fixture_matrix,
     run_fixture_strategy,
@@ -27,6 +36,9 @@ from .provenance_container import (
 )
 
 __all__ = [
+    "FRESHNESS_SYSTEM_ID",
+    "PROVENANCE_SYSTEM_ID",
+    "REQUIRE_POSITIVE_CONTROL_DEFAULT",
     "Arm",
     "ArmOutcome",
     "BenchTask",
@@ -40,14 +52,18 @@ __all__ = [
     "PilotTaskError",
     "ProvenanceRunMetrics",
     "StrategyWorkspace",
+    "SystemDecision",
+    "build_linux_capture_argv",
     "clean_strategy_workspace",
     "compare_gate_decision_to_oracle",
-    "evaluate_provenance",
-    "build_linux_capture_argv",
     "ensure_linux_provenance_image",
+    "evaluate_filesystem_freshness",
+    "evaluate_provenance",
+    "extract_from_artifact_contents",
     "gate_certificate",
     "load_pilot_suite",
     "load_tasks",
+    "project_gate_decision",
     "run_arm",
     "run_fixture_matrix",
     "run_fixture_strategy",

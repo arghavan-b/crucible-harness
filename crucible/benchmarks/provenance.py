@@ -27,7 +27,7 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Iterable, Iterator, Literal
+from typing import Iterable, Iterator, Literal, Mapping
 
 from pydantic import (
     BaseModel,
@@ -1067,6 +1067,32 @@ class ControlledTask:
         )
 
 
+def extract_from_artifact_contents(
+    task: ControlledTask,
+    artifact_contents: Mapping[str, str],
+) -> ScientificCheck:
+    """Run a task's trusted extractor over in-memory required-output contents.
+
+    Trusted extraction is a *task* asset, not a verifier feature: protocol §9
+    grants it to every system from B1 upward. Sharing one implementation keeps
+    the measured quantity identical across the systems under comparison, so a
+    difference between their verdicts is attributable to evidence rules rather
+    than to two subtly different extractors.
+
+    This helper deliberately does not bind the supplied contents to any observed
+    write episode. A system that requires that binding must check it itself; the
+    provenance gate does so in its ``metric_extracted_by`` predicate.
+    """
+    with tempfile.TemporaryDirectory(prefix="crucible_extract_") as directory:
+        root = Path(directory)
+        for output in task.contract.required_outputs:
+            content = artifact_contents[output.path]
+            path = root / PurePosixPath(output.path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        return task.extract_and_evaluate(root)
+
+
 @dataclass(frozen=True)
 class PilotSuite:
     root: Path
@@ -1543,6 +1569,7 @@ __all__ = [
     "StrategyWorkspace",
     "clean_strategy_workspace",
     "compare_gate_decision_to_oracle",
+    "extract_from_artifact_contents",
     "load_pilot_suite",
     "run_fixture_matrix",
     "run_fixture_strategy",
