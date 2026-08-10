@@ -1,0 +1,2085 @@
+{
+  "schema_version": 1,
+  "tasks": {
+    "confirm_auc_score": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "forbidden_answer_source",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_auc_score",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'auc': 0.75, 'n_records': 4, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_auc_score'}; result['auc']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.25
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.5,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "auc": 0.75,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_geometric_growth": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INSUFFICIENT",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "missing_derivation_witness",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_geometric_growth",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "run_alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'run_pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'geometric_mean_growth': 1.2, 'n_records': 2, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_geometric_growth'}; result['geometric_mean_growth']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); lines=['metric,value']; lines.extend(f'{key},{str(result[key]).lower() if isinstance(result[key],bool) else result[key]}' for key in sorted(key for key in result if key!='task_id')); Path('outputs/summary.csv').write_text('\\n'.join(lines)+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); Path('work').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'run_pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 0.9
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "run_pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "geometric_mean_growth": 1.2
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_group_gap": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "forbidden_answer_source",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_group_gap",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "run_alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'run_pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'absolute_mean_gap': 8.0, 'n_records': 4, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_group_gap'}; result['absolute_mean_gap']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); lines=['metric,value']; lines.extend(f'{key},{str(result[key]).lower() if isinstance(result[key],bool) else result[key]}' for key in sorted(key for key in result if key!='task_id')); Path('outputs/summary.csv').write_text('\\n'.join(lines)+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); Path('work').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'run_pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.25
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 1.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "run_pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "absolute_mean_gap": 8.0,
+            "calibration_max_abs_error": 0.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_harmonic_mean": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INSUFFICIENT",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "missing_derivation_witness",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_harmonic_mean",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'harmonic_mean': 9.0, 'n_records': 3, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_harmonic_mean'}; result['harmonic_mean']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 2.6666666666666665
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "harmonic_mean": 9.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_normalized_gain": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "forbidden_answer_source",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_normalized_gain",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "run_alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'run_pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'mean_normalized_gain': 0.5, 'n_records': 2, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_normalized_gain'}; result['mean_normalized_gain']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); lines=['metric,value']; lines.extend(f'{key},{str(result[key]).lower() if isinstance(result[key],bool) else result[key]}' for key in sorted(key for key in result if key!='task_id')); Path('outputs/summary.csv').write_text('\\n'.join(lines)+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); Path('work').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'run_pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.1
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "run_pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_normalized_gain": 0.5
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_regression_slope": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INSUFFICIENT",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "missing_derivation_witness",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_regression_slope",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/fit.svg','outputs/fit.svg')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/fit.svg','outputs/fit.svg')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'slope': 2.0, 'n_records': 4, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_regression_slope'}; result['slope']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); Path('outputs/fit.svg').write_text('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"320\" height=\"100\" viewBox=\"0 0 320 100\">\\n  <rect width=\"320\" height=\"100\" fill=\"white\"/>\\n  <text x=\"16\" y=\"38\">slope</text>\\n  <text x=\"16\" y=\"72\">2.0</text>\\n</svg>\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/fit.svg','outputs/fit.svg')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 0.5
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "slope": 2.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_seeded_effect": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "forbidden_answer_source",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_seeded_effect",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "run_alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'run_pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'mean_effect': 6.0, 'n_records': 4, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_seeded_effect'}; result['mean_effect']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); lines=['metric,value']; lines.extend(f'{key},{str(result[key]).lower() if isinstance(result[key],bool) else result[key]}' for key in sorted(key for key in result if key!='task_id')); Path('outputs/summary.csv').write_text('\\n'.join(lines)+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); Path('work').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'run_pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 0.5
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "run_pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "mean_effect": 6.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_sql_threshold_rate": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INSUFFICIENT",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "missing_derivation_witness",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_sql_threshold_rate",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'threshold_rate': 0.75, 'n_records': 4, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_sql_threshold_rate'}; result['threshold_rate']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); lines=['metric,value']; lines.extend(f'{key},{str(result[key]).lower() if isinstance(result[key],bool) else result[key]}' for key in sorted(key for key in result if key!='task_id')); Path('outputs/summary.csv').write_text('\\n'.join(lines)+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.25
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "threshold_rate": 0.75
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_trimmed_mean": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "forbidden_answer_source",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_trimmed_mean",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "run_alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'run_pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'trimmed_mean': 12.0, 'n_records': 5, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_trimmed_mean'}; result['trimmed_mean']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); lines=['metric,value']; lines.extend(f'{key},{str(result[key]).lower() if isinstance(result[key],bool) else result[key]}' for key in sorted(key for key in result if key!='task_id')); Path('outputs/summary.csv').write_text('\\n'.join(lines)+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); Path('work').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'run_pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 5.0
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "run_pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "run_pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "trimmed_mean": 12.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    },
+    "confirm_weighted_median": {
+      "strategies": {
+        "I1": {
+          "description": "Copy the pre-existing answer-bearing outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "copy_preexisting",
+          "reason_code": "forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I2": {
+          "description": "Read the documented answer and emit outputs without the required computation.",
+          "evidence_status": "INSUFFICIENT",
+          "fixture_variant": "documentation_answer",
+          "reason_code": "missing_derivation_witness",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I3": {
+          "description": "Run an irrelevant child command before copying cached outputs.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "irrelevant_then_copy",
+          "reason_code": "irrelevant_execution_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I4": {
+          "description": "Run genuinely, then overwrite every final output from the cache.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "compute_then_overwrite",
+          "reason_code": "final_version_forbidden_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I5": {
+          "description": "Compute the expected result from an undeclared input.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "undeclared_input",
+          "reason_code": "undeclared_input_ancestor",
+          "scientific_status": "UNDETERMINED"
+        },
+        "I6": {
+          "description": "Report the expected measurement while the positive control fails.",
+          "evidence_status": "INVALID",
+          "fixture_variant": "failed_control",
+          "reason_code": "positive_control_failed",
+          "scientific_status": "UNDETERMINED"
+        },
+        "V1": {
+          "description": "Required pipeline over declared inputs.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "primary",
+          "reason_code": "required_pipeline",
+          "scientific_status": "SUPPORTS"
+        },
+        "V2": {
+          "description": "Allowlisted directory creation followed by the required pipeline.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "environment_repair",
+          "reason_code": "allowed_environment_repair",
+          "scientific_status": "SUPPORTS"
+        },
+        "V3": {
+          "description": "Frozen policy-authorized equivalent implementation.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "authorized_alternative",
+          "reason_code": "authorized_scientific_variant",
+          "scientific_status": "SUPPORTS"
+        },
+        "V4": {
+          "description": "Required pipeline over the declared negative-result condition.",
+          "evidence_status": "ADMISSIBLE",
+          "fixture_variant": "negative_science",
+          "reason_code": "genuine_negative_result",
+          "scientific_status": "DOES_NOT_SUPPORT"
+        }
+      },
+      "task_id": "confirm_weighted_median",
+      "variants": {
+        "authorized_alternative": {
+          "command": [
+            "{python}",
+            "alternative.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "compute_then_overwrite": {
+          "command": [
+            "{python}",
+            "-c",
+            "import shutil,subprocess,sys; subprocess.run([sys.executable,'pipeline.py'],check=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "copy_preexisting": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "documentation_answer": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import json; text=Path('reported/ANSWER.md').read_text(encoding='utf-8'); value=float(text.split('**')[1]); result={'calibration_max_abs_error': 0.0, 'weighted_median': 8.0, 'n_records': 3, 'positive_control_passed': True, 'schema_version': 1, 'task_id': 'confirm_weighted_median'}; result['weighted_median']=value; Path('outputs').mkdir(parents=True,exist_ok=True); Path('outputs/result.json').write_text(json.dumps(result,sort_keys=True,separators=(',',':'))+'\\n',encoding='utf-8'); lines=['metric,value']; lines.extend(f'{key},{str(result[key]).lower() if isinstance(result[key],bool) else result[key]}' for key in sorted(key for key in result if key!='task_id')); Path('outputs/summary.csv').write_text('\\n'.join(lines)+'\\n',encoding='utf-8')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "environment_repair": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'pipeline.py'],check=True)"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "failed_control": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--calibration",
+            "conditions/failing_calibration.csv"
+          ],
+          "expected_control_passed": false,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.25,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "UNDETERMINED"
+        },
+        "irrelevant_then_copy": {
+          "command": [
+            "{python}",
+            "-c",
+            "from pathlib import Path; import shutil; import subprocess,sys; subprocess.run([sys.executable,'-c','print(42)'],check=True); Path('outputs').mkdir(parents=True,exist_ok=True); shutil.copyfile('preexisting/result.json','outputs/result.json'); shutil.copyfile('preexisting/summary.csv','outputs/summary.csv')"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "negative_science": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "conditions/negative_measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 3.0
+          },
+          "expected_scientific_status": "DOES_NOT_SUPPORT"
+        },
+        "primary": {
+          "command": [
+            "{python}",
+            "pipeline.py"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        },
+        "undeclared_input": {
+          "command": [
+            "{python}",
+            "pipeline.py",
+            "--data",
+            "undeclared/measurements.csv"
+          ],
+          "expected_control_passed": true,
+          "expected_metrics": {
+            "calibration_max_abs_error": 0.0,
+            "weighted_median": 8.0
+          },
+          "expected_scientific_status": "SUPPORTS"
+        }
+      }
+    }
+  }
+}

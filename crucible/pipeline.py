@@ -43,14 +43,56 @@ class PipelineResult:
     certificate: ReproducibilityCertificate
 
 
-def _seed_repo(repo_dir: str, working_dir: str) -> None:
+_SQLITE_SIDECAR_SUFFIXES = ("", "-journal", "-wal", "-shm")
+
+
+def _repo_relative_trace_files(repo_dir: str, db_path: str) -> frozenset[str]:
+    """Return harness-owned SQLite paths when the active trace lives in ``repo_dir``."""
+    root = os.path.abspath(repo_dir)
+    database = os.path.abspath(db_path)
+    try:
+        if os.path.commonpath((root, database)) != root:
+            return frozenset()
+    except ValueError:
+        # Different Windows drives cannot share a repository-relative path.
+        return frozenset()
+    relative = os.path.relpath(database, root)
+    if relative == os.curdir:
+        return frozenset()
+    return frozenset(relative + suffix for suffix in _SQLITE_SIDECAR_SUFFIXES)
+
+
+def _seed_repo(
+    repo_dir: str,
+    working_dir: str,
+    *,
+    exclude: frozenset[str] = frozenset(),
+) -> None:
+    """Copy repository inputs without copying harness-owned trace artifacts."""
+    excluded = {os.path.normpath(path) for path in exclude}
+
+    def ignore_excluded(directory: str, names: list[str]) -> list[str]:
+        relative_directory = os.path.relpath(directory, repo_dir)
+        return [
+            name
+            for name in names
+            if os.path.normpath(
+                name
+                if relative_directory == os.curdir
+                else os.path.join(relative_directory, name)
+            )
+            in excluded
+        ]
+
     for name in os.listdir(repo_dir):
         if name == ".git":
+            continue
+        if os.path.normpath(name) in excluded:
             continue
         src = os.path.join(repo_dir, name)
         dst = os.path.join(working_dir, name)
         if os.path.isdir(src):
-            shutil.copytree(src, dst, dirs_exist_ok=True)
+            shutil.copytree(src, dst, dirs_exist_ok=True, ignore=ignore_excluded)
         else:
             shutil.copy2(src, dst)
 
@@ -134,9 +176,13 @@ def run_pipeline(
 
     # Open one trace that spans the whole experiment — intake/grounding LLM calls
     # and execution — so the certificate records every model call (design §6.5).
-    recorder = recorder or SQLiteTraceRecorder(
-        db_path or os.path.join(tempfile.mkdtemp(prefix="crucible_submit_"), "trace.sqlite")
-    )
+    source_exclusions: frozenset[str] = frozenset()
+    if recorder is None:
+        trace_db_path = db_path or os.path.join(
+            tempfile.mkdtemp(prefix="crucible_submit_"), "trace.sqlite"
+        )
+        source_exclusions = _repo_relative_trace_files(repo_dir, trace_db_path)
+        recorder = SQLiteTraceRecorder(trace_db_path)
     trace_id = recorder.start(_experiment_id(uri))
 
     intake_llm = LoggingLLMClient(llm, recorder, trace_id, "intake") if llm is not None else None
@@ -154,7 +200,7 @@ def run_pipeline(
     envmgr = envmgr or LocalEnvironmentManager()
     env = envmgr.provision()
     try:
-        _seed_repo(repo_dir, env.working_dir)
+        _seed_repo(repo_dir, env.working_dir, exclude=source_exclusions)
         source_files = read_source(env.working_dir)
         source_checksums = file_manifest(env.working_dir)
         # Stage 0 replays inputs from inlined UTF-8 text. Reject a binary or otherwise

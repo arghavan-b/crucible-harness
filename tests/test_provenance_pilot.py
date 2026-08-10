@@ -13,11 +13,14 @@ from pathlib import Path
 import pytest
 
 from crucible.benchmarks.provenance import (
+    ControlledSuiteManifest,
+    ControlledTaskContract,
     MeasurementRule,
     PilotTaskError,
     RequiredOutput,
     ResultSchema,
     VariantOracle,
+    load_controlled_suite,
     load_pilot_suite,
     run_fixture_matrix,
     run_fixture_strategy,
@@ -120,6 +123,87 @@ def test_pilot_suite_is_explicitly_development_only() -> None:
     assert tuple(task.task_id for task in suite.tasks) == TASK_IDS
     assert all(task.contract.pilot_only is True for task in suite.tasks)
     assert all("excluded" in task.contract.confirmatory_exclusion for task in suite.tasks)
+
+
+def test_generic_suite_schema_supports_confirmatory_tasks() -> None:
+    manifest = ControlledSuiteManifest.model_validate(
+        {
+            "schema_version": 2,
+            "suite_id": "controlled-confirmatory-v1",
+            "suite_role": "confirmatory",
+            "task_ids": ["evaluation_task"],
+            "strategy_ids": list(STRATEGY_IDS),
+            "pinned_files": {"trusted/oracles.json": "0" * 64},
+        }
+    )
+    contract_data = load_pilot_suite().task("pilot_weighted_mean").contract.model_dump(
+        mode="json"
+    )
+    contract_data.update(
+        {
+            "schema_version": 3,
+            "evaluation_role": "confirmatory",
+        }
+    )
+    contract_data.pop("pilot_only")
+    contract_data.pop("confirmatory_exclusion")
+    for owner in (
+        contract_data["measurement"],
+        contract_data["positive_control"],
+        contract_data["provenance"]["trusted_extraction"],
+    ):
+        owner["extractor_id"] = "controlled-json-v1"
+    contract = ControlledTaskContract.model_validate(contract_data)
+
+    assert manifest.resolved_role == "confirmatory"
+    assert contract.suite_role == "confirmatory"
+    assert contract.pilot_only is None
+    assert contract.confirmatory_exclusion is None
+
+
+def test_generic_loader_is_not_hard_coded_to_pilot_task_ids(tmp_path: Path) -> None:
+    copied = _copy_suite(tmp_path)
+    old_id = "pilot_weighted_mean"
+    new_id = "development_clone"
+    old_root = copied / "tasks" / old_id
+    new_root = copied / "tasks" / new_id
+    old_root.rename(new_root)
+
+    contract_path = new_root / "contract.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract["task_id"] = new_id
+    contract["result_schema"]["task_id"] = new_id
+    contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+    initial_path = new_root / "initial_manifest.json"
+    initial = json.loads(initial_path.read_text(encoding="utf-8"))
+    initial["task_id"] = new_id
+    initial_path.write_text(json.dumps(initial, indent=2) + "\n", encoding="utf-8")
+
+    oracle_path = copied / "trusted" / "oracles.json"
+    oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
+    task_oracle = oracle["tasks"].pop(old_id)
+    task_oracle["task_id"] = new_id
+    oracle["tasks"] = {new_id: task_oracle}
+    oracle_path.write_text(json.dumps(oracle, indent=2) + "\n", encoding="utf-8")
+
+    suite_path = copied / "suite.json"
+    suite_data = json.loads(suite_path.read_text(encoding="utf-8"))
+    suite_data["task_ids"] = [new_id]
+    suite_data["pinned_files"] = {
+        f"tasks/{new_id}/contract.json": hashlib.sha256(contract_path.read_bytes()).hexdigest(),
+        f"tasks/{new_id}/initial_manifest.json": hashlib.sha256(
+            initial_path.read_bytes()
+        ).hexdigest(),
+        "trusted/oracles.json": hashlib.sha256(oracle_path.read_bytes()).hexdigest(),
+    }
+    suite_path.write_text(json.dumps(suite_data, indent=2) + "\n", encoding="utf-8")
+
+    suite = load_controlled_suite(copied)
+
+    assert suite.manifest.task_ids == (new_id,)
+    assert suite.task(new_id).task_id == new_id
+    with pytest.raises(PilotTaskError, match="pilot task IDs"):
+        load_pilot_suite(copied)
 
 
 def test_each_task_has_a_frozen_final_version_provenance_contract() -> None:

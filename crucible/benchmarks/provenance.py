@@ -1,6 +1,6 @@
-"""Development-only controlled tasks for the provenance instrumentation pilot.
+"""Integrity-pinned controlled tasks for provenance experiments.
 
-The pilot assets deliberately live outside the existing ``BenchTask`` model:
+These assets deliberately live outside the existing ``BenchTask`` model:
 they need declared inputs, forbidden ancestors, trusted extraction, and
 construction labels that the current synthetic benchmark schema cannot express.
 
@@ -8,9 +8,10 @@ Only a task's ``repo/`` directory is copied into an evaluated workspace.  The
 contract, initial manifest, strategy labels, and construction oracle remain on
 the harness side of the trust boundary.
 
-This module can self-check fixture executability and scientific outputs.  It is
-*not* a provenance monitor: current Stage-0 traces cannot establish file-level
-lineage or observe same-size writes.
+The generic loader supports development and confirmatory suites. The legacy
+pilot wrapper additionally freezes the two instrumentation tasks and their exact
+expected decision profiles. This module can self-check fixture executability and
+scientific outputs; monitored capture and gating live in adjacent modules.
 """
 
 from __future__ import annotations
@@ -50,6 +51,12 @@ from crucible.schemas.provenance import (
 )
 
 DEFAULT_PILOT_ROOT = Path(__file__).resolve().parents[2] / "benchmarks" / "provenance" / "pilot"
+DEFAULT_CONFIRMATORY_ROOT = (
+    Path(__file__).resolve().parents[2] / "benchmarks" / "provenance" / "confirmatory"
+)
+
+SuiteRole = Literal["development", "confirmatory"]
+_TRUSTED_JSON_EXTRACTORS = frozenset({"pilot-json-v1", "controlled-json-v1"})
 
 _EXPECTED_VARIANTS = {
     "V1": "primary",
@@ -82,8 +89,12 @@ _COMMON_STRATEGY_PROFILE: dict[str, tuple[EvidenceStatus, ScientificStatus, str]
 }
 
 
-class PilotTaskError(RuntimeError):
-    """A controlled-task fixture is malformed, changed, or not executable."""
+class ControlledSuiteError(RuntimeError):
+    """A controlled suite is malformed, changed, not executable, or unsafe to run."""
+
+
+# Backward-compatible public name retained for pilot callers.
+PilotTaskError = ControlledSuiteError
 
 
 def _relative_path(value: str) -> str:
@@ -229,7 +240,7 @@ def _finite_json_number(value: object, *, field_name: str) -> object:
 
 class MeasurementRule(_StrictModel):
     artifact_path: str
-    extractor_id: Literal["pilot-json-v1"]
+    extractor_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*-v[1-9][0-9]*$")
     metric: str
     operator: Literal[">=", ">", "<=", "<"]
     threshold: float
@@ -252,7 +263,7 @@ class MeasurementRule(_StrictModel):
 
 class PositiveControlRule(_StrictModel):
     artifact_path: str
-    extractor_id: Literal["pilot-json-v1"]
+    extractor_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*-v[1-9][0-9]*$")
     metric: str
     expected: float
     tolerance: float = Field(default=0.0, ge=0.0)
@@ -367,7 +378,7 @@ class ProvenanceOutputRule(_StrictModel):
 
 class TrustedExtractionBinding(_StrictModel):
     artifact_path: str
-    extractor_id: Literal["pilot-json-v1"]
+    extractor_id: str = Field(pattern=r"^[a-z][a-z0-9_-]*-v[1-9][0-9]*$")
     bind_to_final_version: Literal[True]
 
     _safe_artifact_path = field_validator("artifact_path")(_relative_path)
@@ -410,10 +421,11 @@ class ProvenanceContract(_StrictModel):
 
 
 class ControlledTaskContract(_StrictModel):
-    schema_version: Literal[2]
+    schema_version: Literal[2, 3]
     task_id: str
-    pilot_only: Literal[True]
-    confirmatory_exclusion: str
+    evaluation_role: SuiteRole | None = None
+    pilot_only: StrictBool | None = None
+    confirmatory_exclusion: str | None = None
     family: str
     description: str
     required_command: tuple[str, ...]
@@ -430,8 +442,31 @@ class ControlledTaskContract(_StrictModel):
     allowed_repairs: tuple[AllowedRepair, ...] = ()
     allowed_scientific_variants: tuple[AllowedScientificVariant, ...] = ()
 
+    @property
+    def suite_role(self) -> SuiteRole:
+        if self.evaluation_role is not None:
+            return self.evaluation_role
+        if self.pilot_only is True:
+            return "development"
+        raise ValueError("controlled task contract does not declare an evaluation role")
+
     @model_validator(mode="after")
     def _validate_contract_links(self) -> ControlledTaskContract:
+        if self.schema_version == 2:
+            if self.evaluation_role is not None or self.pilot_only is not True:
+                raise ValueError("schema-version 2 contracts must be development-only pilots")
+            if not self.confirmatory_exclusion:
+                raise ValueError("development contracts must state their confirmatory exclusion")
+        else:
+            if self.evaluation_role is None:
+                raise ValueError("schema-version 3 contracts must declare evaluation_role")
+            if self.evaluation_role == "confirmatory":
+                if self.pilot_only is True or self.confirmatory_exclusion is not None:
+                    raise ValueError(
+                        "confirmatory contracts cannot be marked pilot-only or excluded"
+                    )
+            elif not self.confirmatory_exclusion:
+                raise ValueError("development contracts must state their confirmatory exclusion")
         if len(self.required_command) < 2:
             raise ValueError("required_command must include a runtime and entrypoint")
         if self.required_command[0] != "{python}":
@@ -449,15 +484,28 @@ class ControlledTaskContract(_StrictModel):
         for artifact in (self.measurement.artifact_path, self.positive_control.artifact_path):
             if artifact not in output_paths:
                 raise ValueError(f"extractor artifact {artifact!r} is not a required output")
+        extractor_ids = {
+            self.measurement.extractor_id,
+            self.positive_control.extractor_id,
+            self.provenance.trusted_extraction.extractor_id,
+        }
+        unknown_extractors = extractor_ids - _TRUSTED_JSON_EXTRACTORS
+        if unknown_extractors:
+            raise ValueError(
+                "unregistered controlled-task extractor(s): "
+                + ", ".join(sorted(unknown_extractors))
+            )
+        if len(extractor_ids) != 1:
+            raise ValueError("measurement, control, and provenance must share one extractor")
         if self.positive_control.artifact_path != self.measurement.artifact_path:
-            raise ValueError("pilot-json-v1 requires measurement and control in one artifact")
+            raise ValueError("controlled JSON extraction requires measurement and control together")
         artifact_output = next(
             output
             for output in self.required_outputs
             if output.path == self.measurement.artifact_path
         )
         if artifact_output.media_type != "application/json":
-            raise ValueError("pilot-json-v1 requires an application/json output")
+            raise ValueError("controlled JSON extraction requires an application/json output")
         if self.measurement.metric == self.positive_control.metric:
             raise ValueError("measurement and positive-control metrics must differ")
         numeric = set(self.result_schema.numeric_fields)
@@ -652,17 +700,33 @@ class OracleFile(_StrictModel):
     tasks: dict[str, TaskOracle]
 
 
-class PilotSuiteManifest(_StrictModel):
-    schema_version: Literal[1]
+class ControlledSuiteManifest(_StrictModel):
+    schema_version: Literal[1, 2]
     suite_id: str
-    development_only: Literal[True]
-    confirmatory_excluded: Literal[True]
+    suite_role: SuiteRole | None = None
+    development_only: StrictBool | None = None
+    confirmatory_excluded: StrictBool | None = None
     task_ids: tuple[str, ...]
     strategy_ids: tuple[str, ...]
     pinned_files: dict[str, str]
 
     @model_validator(mode="after")
-    def _unique_ids(self) -> PilotSuiteManifest:
+    def _unique_ids(self) -> ControlledSuiteManifest:
+        if self.schema_version == 1:
+            if (
+                self.suite_role is not None
+                or self.development_only is not True
+                or self.confirmatory_excluded is not True
+            ):
+                raise ValueError("schema-version 1 suites must be development-only pilots")
+        elif self.suite_role is None:
+            raise ValueError("schema-version 2 suites must declare suite_role")
+        if self.resolved_role == "confirmatory" and (
+            self.development_only is True or self.confirmatory_excluded is True
+        ):
+            raise ValueError("confirmatory suites cannot be marked development-only or excluded")
+        if not self.task_ids or not self.strategy_ids:
+            raise ValueError("controlled suites require tasks and strategies")
         if len(set(self.task_ids)) != len(self.task_ids):
             raise ValueError("suite contains duplicate task IDs")
         if len(set(self.strategy_ids)) != len(self.strategy_ids):
@@ -672,6 +736,14 @@ class PilotSuiteManifest(_StrictModel):
             if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
                 raise ValueError(f"invalid suite SHA-256 for {path!r}")
         return self
+
+    @property
+    def resolved_role(self) -> SuiteRole:
+        return self.suite_role or "development"
+
+
+# Backward-compatible public name for callers that only know the pilot schema.
+PilotSuiteManifest = ControlledSuiteManifest
 
 
 @dataclass(frozen=True)
@@ -920,7 +992,7 @@ class ControlledTask:
         self.verify_initial_manifest()
         target = Path(destination)
         if target.exists():
-            raise PilotTaskError(f"pilot workspace already exists: {target}")
+            raise PilotTaskError(f"controlled workspace already exists: {target}")
         shutil.copytree(self.repo_root, target)
         return target
 
@@ -1094,16 +1166,20 @@ def extract_from_artifact_contents(
 
 
 @dataclass(frozen=True)
-class PilotSuite:
+class ControlledSuite:
     root: Path
-    manifest: PilotSuiteManifest
+    manifest: ControlledSuiteManifest
     tasks: tuple[ControlledTask, ...]
 
     def task(self, task_id: str) -> ControlledTask:
         for task in self.tasks:
             if task.task_id == task_id:
                 return task
-        raise KeyError(f"unknown pilot task {task_id!r}")
+        raise KeyError(f"unknown controlled task {task_id!r}")
+
+
+# Backward-compatible public name for existing pilot consumers.
+PilotSuite = ControlledSuite
 
 
 def _measurement_passes(
@@ -1203,36 +1279,18 @@ def _validate_task(task: ControlledTask, strategy_ids: set[str]) -> None:
                 f"{task.task_id}/{variant_id} ungated status disagrees with its metrics"
             )
 
-    expected_i2: tuple[EvidenceStatus, ScientificStatus, str]
-    if task.task_id == "pilot_weighted_mean":
-        expected_i2 = ("INVALID", "UNDETERMINED", "forbidden_answer_source")
-    elif task.task_id == "pilot_seeded_comparison":
-        expected_i2 = ("INSUFFICIENT", "UNDETERMINED", "missing_derivation_witness")
-    else:
-        raise PilotTaskError(f"unexpected pilot task ID {task.task_id}")
-    expected_profiles = {**_COMMON_STRATEGY_PROFILE, "I2": expected_i2}
     for strategy_id, expected_variant in _EXPECTED_VARIANTS.items():
         strategy = task.oracle.strategies[strategy_id]
-        actual_profile = (
-            strategy.evidence_status,
-            strategy.scientific_status,
-            strategy.reason_code,
-        )
         if strategy.fixture_variant != expected_variant:
             raise PilotTaskError(
                 f"{task.task_id}/{strategy_id} maps to {strategy.fixture_variant!r}, "
                 f"expected {expected_variant!r}"
             )
-        if actual_profile != expected_profiles[strategy_id]:
-            raise PilotTaskError(
-                f"{task.task_id}/{strategy_id} profile {actual_profile!r}, "
-                f"expected {expected_profiles[strategy_id]!r}"
-            )
 
     if task.oracle.variants["primary"].command != task.contract.required_command:
         raise PilotTaskError(f"{task.task_id} V1 command does not equal required_command")
     if len(task.contract.allowed_repairs) != 1:
-        raise PilotTaskError(f"{task.task_id} must declare exactly one pilot repair")
+        raise PilotTaskError(f"{task.task_id} must declare exactly one environment repair")
     repair = task.contract.allowed_repairs[0]
     if task.oracle.variants["environment_repair"].command != repair.command:
         raise PilotTaskError(f"{task.task_id} V2 command is not the allowlisted repair")
@@ -1294,16 +1352,35 @@ def _validate_task(task: ControlledTask, strategy_ids: set[str]) -> None:
     task.verify_initial_manifest()
 
 
-def load_pilot_suite(root: str | Path | None = None) -> PilotSuite:
-    """Load and integrity-check the two development-only provenance tasks."""
-    suite_root = Path(root) if root is not None else DEFAULT_PILOT_ROOT
-    manifest = PilotSuiteManifest.model_validate(_read_json(suite_root / "suite.json"))
-    if manifest.task_ids != _EXPECTED_TASK_IDS:
-        raise PilotTaskError(
-            f"pilot task IDs {manifest.task_ids!r} do not equal {_EXPECTED_TASK_IDS!r}"
+def _validate_pilot_profile(task: ControlledTask) -> None:
+    expected_i2: tuple[EvidenceStatus, ScientificStatus, str]
+    if task.task_id == "pilot_weighted_mean":
+        expected_i2 = ("INVALID", "UNDETERMINED", "forbidden_answer_source")
+    elif task.task_id == "pilot_seeded_comparison":
+        expected_i2 = ("INSUFFICIENT", "UNDETERMINED", "missing_derivation_witness")
+    else:
+        raise PilotTaskError(f"unexpected pilot task ID {task.task_id}")
+    expected_profiles = {**_COMMON_STRATEGY_PROFILE, "I2": expected_i2}
+    for strategy_id, expected_profile in expected_profiles.items():
+        strategy = task.oracle.strategies[strategy_id]
+        actual_profile = (
+            strategy.evidence_status,
+            strategy.scientific_status,
+            strategy.reason_code,
         )
+        if actual_profile != expected_profile:
+            raise PilotTaskError(
+                f"{task.task_id}/{strategy_id} profile {actual_profile!r}, "
+                f"expected {expected_profile!r}"
+            )
+
+
+def load_controlled_suite(root: str | Path) -> ControlledSuite:
+    """Load an integrity-pinned development or confirmatory controlled suite."""
+    suite_root = Path(root)
+    manifest = ControlledSuiteManifest.model_validate(_read_json(suite_root / "suite.json"))
     if manifest.strategy_ids != tuple(_EXPECTED_VARIANTS):
-        raise PilotTaskError("pilot strategy IDs do not equal the frozen V1--I6 profile")
+        raise PilotTaskError("controlled strategy IDs do not equal the frozen V1--I6 profile")
     expected_pins = {
         "trusted/oracles.json",
         *(
@@ -1344,9 +1421,28 @@ def load_pilot_suite(root: str | Path | None = None) -> PilotSuite:
         )
         if task.task_id != task_id:
             raise PilotTaskError(f"suite task {task_id!r} loaded contract for {task.task_id!r}")
+        if task.contract.suite_role != manifest.resolved_role:
+            raise PilotTaskError(
+                f"{task.task_id} contract role {task.contract.suite_role!r} does not match "
+                f"suite role {manifest.resolved_role!r}"
+            )
         _validate_task(task, strategy_ids)
         tasks.append(task)
-    return PilotSuite(root=suite_root, manifest=manifest, tasks=tuple(tasks))
+    return ControlledSuite(root=suite_root, manifest=manifest, tasks=tuple(tasks))
+
+
+def load_pilot_suite(root: str | Path | None = None) -> ControlledSuite:
+    """Load the two frozen development pilots through the generic suite loader."""
+    suite = load_controlled_suite(Path(root) if root is not None else DEFAULT_PILOT_ROOT)
+    if suite.manifest.resolved_role != "development":
+        raise PilotTaskError("pilot suite must be development-only")
+    if suite.manifest.task_ids != _EXPECTED_TASK_IDS:
+        raise PilotTaskError(
+            f"pilot task IDs {suite.manifest.task_ids!r} do not equal {_EXPECTED_TASK_IDS!r}"
+        )
+    for task in suite.tasks:
+        _validate_pilot_profile(task)
+    return suite
 
 
 def _python_requirement_satisfied(requirement: str) -> bool:
@@ -1518,7 +1614,7 @@ def run_fixture_strategy(
 
 
 def run_fixture_matrix(
-    suite: PilotSuite,
+    suite: ControlledSuite,
     *,
     task_ids: Iterable[str] | None = None,
     strategy_ids: Iterable[str] | None = None,
@@ -1557,8 +1653,12 @@ def run_fixture_matrix(
 
 
 __all__ = [
+    "ControlledSuite",
+    "ControlledSuiteError",
+    "ControlledSuiteManifest",
     "ControlledTask",
     "ControlledTaskContract",
+    "DEFAULT_CONFIRMATORY_ROOT",
     "DEFAULT_PILOT_ROOT",
     "FixtureExecution",
     "OracleComparison",
@@ -1567,9 +1667,11 @@ __all__ = [
     "PilotTaskError",
     "ScientificCheck",
     "StrategyWorkspace",
+    "SuiteRole",
     "clean_strategy_workspace",
     "compare_gate_decision_to_oracle",
     "extract_from_artifact_contents",
+    "load_controlled_suite",
     "load_pilot_suite",
     "run_fixture_matrix",
     "run_fixture_strategy",

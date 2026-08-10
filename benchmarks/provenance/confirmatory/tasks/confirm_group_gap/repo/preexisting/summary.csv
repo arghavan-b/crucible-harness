@@ -1,0 +1,6 @@
+metric,value
+absolute_mean_gap,8.0
+calibration_max_abs_error,0.0
+n_records,4
+positive_control_passed,true
+schema_version,1

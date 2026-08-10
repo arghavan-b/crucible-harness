@@ -35,7 +35,7 @@ class ProvenanceRunMetrics(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False, strict=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     task_id: str = Field(min_length=1)
     strategy_id: str = Field(min_length=1)
     trace_id: str = Field(min_length=1)
@@ -43,6 +43,12 @@ class ProvenanceRunMetrics(BaseModel):
     trace_size_bytes: StrictInt = Field(ge=0)
     event_count: StrictInt = Field(ge=0)
     gate_latency_s: float = Field(ge=0.0)
+    normalized_trace_size_bytes: StrictInt = Field(default=0, ge=0)
+    certificate_size_bytes: StrictInt = Field(default=0, ge=0)
+    gate_decision_size_bytes: StrictInt = Field(default=0, ge=0)
+    raw_trace_file_count: StrictInt = Field(default=0, ge=0)
+    process_event_count: StrictInt = Field(default=0, ge=0)
+    file_event_count: StrictInt = Field(default=0, ge=0)
 
 
 @dataclass(frozen=True)
@@ -259,6 +265,12 @@ def run_frozen_strategy_in_container(
         trace_size_bytes=sum(events.raw_trace_size_bytes.values()),
         event_count=len(events.process_events) + len(events.file_events),
         gate_latency_s=gate_latency_s,
+        normalized_trace_size_bytes=len(events.model_dump_json().encode("utf-8")),
+        certificate_size_bytes=destination.stat().st_size,
+        gate_decision_size_bytes=decision_destination.stat().st_size,
+        raw_trace_file_count=len(events.raw_trace_size_bytes),
+        process_event_count=len(events.process_events),
+        file_event_count=len(events.file_events),
     )
     with metrics_destination.open("x", encoding="utf-8") as handle:
         handle.write(metrics.model_dump_json(indent=2))

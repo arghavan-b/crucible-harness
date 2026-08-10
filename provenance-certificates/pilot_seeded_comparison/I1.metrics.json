@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "task_id": "pilot_seeded_comparison",
+  "strategy_id": "I1",
+  "trace_id": "trace_84d2675ed6",
+  "runtime_s": 0.08837408298859373,
+  "trace_size_bytes": 296164,
+  "event_count": 592,
+  "gate_latency_s": 0.001066708005964756
+}

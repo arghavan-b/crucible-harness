@@ -1,0 +1,6 @@
+metric,value
+calibration_max_abs_error,0.0
+geometric_mean_growth,1.2
+n_records,2
+positive_control_passed,true
+schema_version,1

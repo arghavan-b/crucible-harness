@@ -1,0 +1,6 @@
+metric,value
+calibration_max_abs_error,0.0
+n_records,3
+positive_control_passed,true
+schema_version,1
+weighted_median,8.0

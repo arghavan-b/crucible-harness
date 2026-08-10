@@ -13,21 +13,28 @@ from typing import Sequence
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from crucible.benchmarks.provenance import PilotTaskError, load_pilot_suite  # noqa: E402
-from crucible.benchmarks.provenance_container import (  # noqa: E402
-    ensure_linux_provenance_image,
-    run_frozen_strategy_in_container,
+from crucible.benchmarks.provenance import (  # noqa: E402
+    PilotTaskError,
+    load_controlled_suite,
+    load_pilot_suite,
+)
+from crucible.benchmarks.provenance_experiment import (  # noqa: E402
+    run_controlled_suite_experiment,
 )
 
 
 def cli(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--suite-root", default=None, help="Override the bundled pilot root.")
+    parser.add_argument(
+        "--suite-root",
+        default=None,
+        help="Run an integrity-pinned controlled suite instead of the bundled pilot.",
+    )
     parser.add_argument(
         "--task",
         action="append",
         default=[],
-        help="Task ID to run; repeatable (default: every pilot task).",
+        help="Task ID to run; repeatable (default: every controlled task).",
     )
     parser.add_argument(
         "--strategy",
@@ -51,47 +58,39 @@ def cli(argv: Sequence[str] | None = None) -> int:
         help="Linux provenance image tag.",
     )
     parser.add_argument("--rebuild", action="store_true", help="Rebuild the image first.")
+    parser.add_argument(
+        "--run-id",
+        default=None,
+        help="Stable experiment run ID (default: generated UUID).",
+    )
+    parser.add_argument(
+        "--supersedes-run-id",
+        default=None,
+        help="Optional prior run ID linked as a protocol-authorized rerun.",
+    )
     args = parser.parse_args(argv)
 
     try:
-        suite = load_pilot_suite(args.suite_root)
-        task_ids = tuple(args.task) if args.task else suite.manifest.task_ids
-        strategy_ids = tuple(args.strategy) if args.strategy else suite.manifest.strategy_ids
-        if len(set(task_ids)) != len(task_ids):
-            raise PilotTaskError("task selection contains duplicate IDs")
-        if len(set(strategy_ids)) != len(strategy_ids):
-            raise PilotTaskError("strategy selection contains duplicate IDs")
-        unknown_tasks = set(task_ids) - set(suite.manifest.task_ids)
-        unknown_strategies = set(strategy_ids) - set(suite.manifest.strategy_ids)
-        if unknown_tasks:
-            raise PilotTaskError("unknown task(s): " + ", ".join(sorted(unknown_tasks)))
-        if unknown_strategies:
-            raise PilotTaskError("unknown strategy(s): " + ", ".join(sorted(unknown_strategies)))
-
-        digest = ensure_linux_provenance_image(
-            image=args.image,
-            repo_root=REPO_ROOT,
-            rebuild=args.rebuild,
+        suite = (
+            load_controlled_suite(args.suite_root)
+            if args.suite_root is not None
+            else load_pilot_suite()
         )
-        output_root = Path(args.output_dir).resolve()
-        workspace_parent = Path(args.workspace_parent).resolve() if args.workspace_parent else None
-        executions = []
-        for task_id in task_ids:
-            task = suite.task(task_id)
-            for strategy_id in strategy_ids:
-                raw_certificate = output_root / task_id / f"{strategy_id}.raw.certificate.json"
-                gate_decision = output_root / task_id / f"{strategy_id}.gate.json"
-                metrics = output_root / task_id / f"{strategy_id}.metrics.json"
-                execution = run_frozen_strategy_in_container(
-                    task,
-                    strategy_id,
-                    container_digest=digest,
-                    raw_certificate_path=raw_certificate,
-                    gate_decision_path=gate_decision,
-                    metrics_path=metrics,
-                    workspace_parent=workspace_parent,
-                )
-                executions.append(execution)
+        result = run_controlled_suite_experiment(
+            suite,
+            output_root=args.output_dir,
+            repo_root=REPO_ROOT,
+            image=args.image,
+            rebuild=args.rebuild,
+            task_ids=tuple(args.task) if args.task else None,
+            strategy_ids=tuple(args.strategy) if args.strategy else None,
+            workspace_parent=args.workspace_parent,
+            run_id=args.run_id,
+            supersedes_run_id=args.supersedes_run_id,
+        )
+        for attempt in result.attempts:
+            execution = attempt.execution
+            if execution is not None:
                 print(
                     json.dumps(
                         {
@@ -119,23 +118,50 @@ def cli(argv: Sequence[str] | None = None) -> int:
                         sort_keys=True,
                     )
                 )
-        mismatches = [
-            execution for execution in executions if not execution.oracle_comparison.matches
-        ]
+            else:
+                print(
+                    json.dumps(
+                        {
+                            "task_id": attempt.case.task_id,
+                            "strategy_id": attempt.case.strategy_id,
+                            "attempt_failed": True,
+                            "error_type": attempt.error_type,
+                            "error_message": attempt.error_message,
+                            "retained_artifacts": [
+                                artifact.relative_path for artifact in attempt.artifacts
+                            ],
+                        },
+                        sort_keys=True,
+                    ),
+                    file=sys.stderr,
+                )
+        if result.suite_error_type is not None:
+            print(
+                f"suite setup failed: {result.suite_error_type}: "
+                f"{result.suite_error_message}",
+                file=sys.stderr,
+            )
         print(
-            f"captured, gated, and oracle-compared {len(executions)} "
-            "frozen task/strategy execution(s)"
+            f"planned {len(result.manifest.selected_cases)}, attempted "
+            f"{len(result.attempts)}, completed "
+            f"{sum(attempt.succeeded for attempt in result.attempts)}, failed "
+            f"{len(result.failures)}, unattempted "
+            f"{len(result.manifest.selected_cases) - len(result.attempts)}, "
+            f"oracle mismatches {len(result.mismatches)}"
         )
-        if mismatches:
-            for execution in mismatches:
+        print(f"run manifest -> {result.manifest_path}")
+        print(f"experiment ledger -> {result.ledger_path}")
+        if result.mismatches:
+            for attempt in result.mismatches:
+                assert attempt.execution is not None
+                execution = attempt.execution
                 comparison = execution.oracle_comparison
                 print(
                     f"oracle mismatch: {execution.task_id}/{execution.strategy_id}: "
                     + ", ".join(comparison.mismatched_fields),
                     file=sys.stderr,
                 )
-            return 1
-        return 0
+        return result.exit_code
     except FileNotFoundError as exc:
         print(f"linux-provenance-matrix: executable not found: {exc.filename}", file=sys.stderr)
         return 127

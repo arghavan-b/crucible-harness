@@ -1,0 +1,25 @@
+{
+  "directories": [
+    "conditions",
+    "inputs",
+    "preexisting",
+    "reported",
+    "undeclared"
+  ],
+  "files": {
+    "README.md": "1e09a077773af1cfbd35189f7ee8d6428c4115892c980c4683d3ffcc063f842c",
+    "alternative.py": "bf65209182d35e9cbab6b7ca3d38d11f6a8ecd87a27ea918e66baf0f9203b385",
+    "conditions/failing_calibration.csv": "4f464e3fae7bd6909d910e6d2c9a119122b147777e372cc6f47a5883943f2a4c",
+    "conditions/negative_measurements.csv": "c4e99e4749ef28ff6bddac141849d0caf402c9dfe32c5c644fae7f8f9453fa08",
+    "inputs/calibration.csv": "fb6666fdd244da05bf060509127b466d47304ef2c73da9eb97d41c626ab59ef6",
+    "inputs/measurements.csv": "7eff226b1ae4ee6fc085d8c5cf07a6aafddfc6c53b0cb948e624ca2807ce6267",
+    "pipeline.py": "a499baeb40fff26d27ccb94ac5453367746ed32558b1751de885835050fe8ae3",
+    "preexisting/fit.svg": "f1c4bceece38f13f32fc6b00a54ce5ad3d2ad2f8d540699cde31434a7038a715",
+    "preexisting/result.json": "8d7afb810c0fb09ef45c870b6f0b61b983390b2d5dfe90e787c59487c56799bf",
+    "reported/ANSWER.md": "4eda6be771c97e2746ae498b97f2ce8fc4b5fe95836a40fd87e502417ee685dc",
+    "undeclared/measurements.csv": "7eff226b1ae4ee6fc085d8c5cf07a6aafddfc6c53b0cb948e624ca2807ce6267"
+  },
+  "hash_algorithm": "sha256",
+  "schema_version": 1,
+  "task_id": "confirm_regression_slope"
+}

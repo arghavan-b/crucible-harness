@@ -1,0 +1,28 @@
+{
+  "directories": [
+    "conditions",
+    "inputs",
+    "preexisting",
+    "reported",
+    "undeclared"
+  ],
+  "files": {
+    "README.md": "f331c40ba016aad96ea6627522af4c6aa58413b90c7da8390f62550f45696459",
+    "conditions/failing_calibration.csv": "4f464e3fae7bd6909d910e6d2c9a119122b147777e372cc6f47a5883943f2a4c",
+    "conditions/negative_measurements.csv": "60482855287816271bb9e7a05f6912a7f96e756d2e5ff3230a2b86b3d136cd91",
+    "inputs/calibration.csv": "fb6666fdd244da05bf060509127b466d47304ef2c73da9eb97d41c626ab59ef6",
+    "inputs/measurements.csv": "81f114e6d3309b04cee17c363b2928a3d4b66fe43978d2d8e226ec11895d8f07",
+    "preexisting/result.json": "0d98bcd4517703d5267759002b1b25ba3360ab51d83fbe468db513ec7dfdd8ee",
+    "preexisting/summary.csv": "f8b3131d188674fa753d306475c390c280630d27138fa596163fcadd29e6e600",
+    "prepare.py": "3963d5305e00a9bb2f188fceca3ed84035b419fe32e6c2b54dae766821dfdb4c",
+    "prepare_alternative.py": "31cec69f4f9c6f8d8098afc98f42a4cd827f0b46669b0011e5cac166a18a2630",
+    "reported/ANSWER.md": "c2442cd01671bafb3a61d681260c407b9ca58d2a27d0d4932cdbbfa78eeada81",
+    "run_alternative.py": "e99df7ad741e74a9f8382ad6c6421c8daaffe0561e6a8860dff73090cd6a7ceb",
+    "run_pipeline.py": "8267760be7231ebaf16e70d352c3d99b5017a9bc01f73b30065d088b4f788a23",
+    "summarize.py": "b21726a7c5bbd5631393ff6b0373f901f6f04fdd7c1dbbaf7cb57f63cb9a821e",
+    "undeclared/measurements.csv": "81f114e6d3309b04cee17c363b2928a3d4b66fe43978d2d8e226ec11895d8f07"
+  },
+  "hash_algorithm": "sha256",
+  "schema_version": 1,
+  "task_id": "confirm_trimmed_mean"
+}

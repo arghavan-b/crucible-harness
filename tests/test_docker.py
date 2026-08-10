@@ -60,3 +60,5 @@ def test_docker_pipeline_end_to_end(tmp_path) -> None:
     result = run_pipeline(str(tmp_path), envmgr=envmgr, runner=runner,
                           db_path=str(tmp_path / "trace.sqlite"))
     assert result.verdict.status is VerdictStatus.SUCCESS
+    assert "trace.sqlite" not in result.certificate.source_files
+    assert "trace.sqlite" not in result.certificate.pinned_inputs.dataset_checksums

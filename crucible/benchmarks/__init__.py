@@ -13,7 +13,11 @@ from .baselines import (
 )
 from .corebench import BenchTask, GroundTruth, load_tasks, stratified_sample, synthetic_tasks
 from .provenance import (
+    ControlledSuite,
+    ControlledSuiteError,
+    ControlledSuiteManifest,
     ControlledTask,
+    DEFAULT_CONFIRMATORY_ROOT,
     OracleComparison,
     PilotSuite,
     PilotTaskError,
@@ -21,10 +25,24 @@ from .provenance import (
     clean_strategy_workspace,
     compare_gate_decision_to_oracle,
     extract_from_artifact_contents,
+    load_controlled_suite,
     load_pilot_suite,
     run_fixture_matrix,
     run_fixture_strategy,
     run_fixture_variant,
+)
+from .provenance_experiment import (
+    ControlledCaseAttempt,
+    ControlledExperimentResult,
+    run_controlled_suite_experiment,
+)
+from .provenance_ledger import (
+    AppendOnlyExperimentLedger,
+    ArtifactIntegrity,
+    ControlledCase,
+    ControlledRunManifest,
+    ExperimentLedgerRecord,
+    verify_experiment_ledger,
 )
 from .provenance_gate import evaluate_provenance, gate_certificate
 from .provenance_container import (
@@ -42,7 +60,15 @@ __all__ = [
     "Arm",
     "ArmOutcome",
     "BenchTask",
+    "ControlledCase",
+    "ControlledCaseAttempt",
+    "ControlledExperimentResult",
+    "ControlledRunManifest",
+    "ControlledSuite",
+    "ControlledSuiteError",
+    "ControlledSuiteManifest",
     "ControlledTask",
+    "DEFAULT_CONFIRMATORY_ROOT",
     "GroundTruth",
     "HarnessOnArm",
     "LinuxContainerExecution",
@@ -51,6 +77,9 @@ __all__ = [
     "PilotSuite",
     "PilotTaskError",
     "ProvenanceRunMetrics",
+    "AppendOnlyExperimentLedger",
+    "ArtifactIntegrity",
+    "ExperimentLedgerRecord",
     "StrategyWorkspace",
     "SystemDecision",
     "build_linux_capture_argv",
@@ -61,14 +90,17 @@ __all__ = [
     "evaluate_provenance",
     "extract_from_artifact_contents",
     "gate_certificate",
+    "load_controlled_suite",
     "load_pilot_suite",
     "load_tasks",
     "project_gate_decision",
     "run_arm",
+    "run_controlled_suite_experiment",
     "run_fixture_matrix",
     "run_fixture_strategy",
     "run_fixture_variant",
     "run_frozen_strategy_in_container",
     "stratified_sample",
     "synthetic_tasks",
+    "verify_experiment_ledger",
 ]

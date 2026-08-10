@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "task_id": "pilot_weighted_mean",
+  "strategy_id": "V3",
+  "trace_id": "trace_b25203019f",
+  "runtime_s": 0.09791075001703575,
+  "trace_size_bytes": 380165,
+  "event_count": 695,
+  "gate_latency_s": 0.0008008329896256328
+}

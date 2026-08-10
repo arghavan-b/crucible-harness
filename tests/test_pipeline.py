@@ -51,6 +51,25 @@ def test_submit_success_and_reproducible(tmp_path) -> None:
     assert report.reproduced
 
 
+def test_submit_excludes_active_trace_database_from_source_snapshot(tmp_path) -> None:
+    repo = _repo(tmp_path, GOOD_REPO)
+    trace_path = tmp_path / "repo" / "trace.sqlite"
+
+    result = run_pipeline(repo, db_path=str(trace_path))
+
+    assert trace_path.is_file()
+    trace_paths = {
+        "trace.sqlite",
+        "trace.sqlite-journal",
+        "trace.sqlite-wal",
+        "trace.sqlite-shm",
+    }
+    assert not trace_paths & set(result.certificate.source_files)
+    assert not trace_paths & set(result.certificate.pinned_inputs.dataset_checksums)
+    assert not trace_paths & set(result.certificate.artifact_manifest)
+    assert replay_certificate(result.certificate).reproduced
+
+
 def test_submit_execution_failure(tmp_path) -> None:
     repo = _repo(tmp_path, BROKEN_REPO)
     result = run_pipeline(repo, db_path=str(tmp_path / "t.sqlite"))

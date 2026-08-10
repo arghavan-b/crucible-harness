@@ -100,6 +100,7 @@ How often does each verifier issue the correct decisive verdict for an evidence-
 
 **H2:** The full provenance gate achieves at least 85% valid-run coverage and is non-inferior to the filesystem-freshness baseline with a pre-specified non-inferiority margin of 10 percentage points.
 
+In plain language: the provenance gate must correctly handle at least 85% of valid runs, and the evidence must be strong enough to rule out a coverage loss greater than 10 percentage points compared with the simpler baseline. This protects against building a verifier that prevents false verification merely by rejecting too many legitimate results.
 ### RQ3: Failure localization
 
 Does the full verifier emit the correct machine-readable reason for each process-invalid strategy?
@@ -168,7 +169,7 @@ The final task manifest and its hash will be recorded at protocol freeze. Task s
 
 ### 6.2 Execution strategies
 
-Every evaluation task will be instantiated with the same ten strategy classes.
+Every evaluation task will be instantiated with the same ten strategy classes. They are controlled test scenarios for evaluating the verifier.
 
 | ID | Strategy | Expected evidence status | Expected scientific status |
 |---|---|---|---|

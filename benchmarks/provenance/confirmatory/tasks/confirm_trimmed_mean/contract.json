@@ -1,0 +1,303 @@
+{
+  "allowed_repairs": [
+    {
+      "allowed_paths": [
+        "outputs",
+        "work"
+      ],
+      "command": [
+        "{python}",
+        "-c",
+        "from pathlib import Path; import subprocess,sys; Path('outputs').mkdir(parents=True,exist_ok=True); Path('work').mkdir(parents=True,exist_ok=True); subprocess.run([sys.executable,'run_pipeline.py'],check=True)"
+      ],
+      "description": "Create only missing runtime output directories before the required pipeline.",
+      "kind": "environment",
+      "repair_id": "create_runtime_directories"
+    }
+  ],
+  "allowed_scientific_variants": [
+    {
+      "command": [
+        "{python}",
+        "run_alternative.py"
+      ],
+      "description": "Use the frozen equivalent implementation or preparation ordering.",
+      "variant_id": "equivalent_ordering"
+    }
+  ],
+  "condition_commands": {
+    "failed_control": [
+      "{python}",
+      "run_pipeline.py",
+      "--calibration",
+      "conditions/failing_calibration.csv"
+    ],
+    "negative_science": [
+      "{python}",
+      "run_pipeline.py",
+      "--data",
+      "conditions/negative_measurements.csv"
+    ]
+  },
+  "condition_inputs": {
+    "failed_control": [
+      {
+        "path": "conditions/failing_calibration.csv",
+        "role": "declared failed-control input",
+        "sha256": "4f464e3fae7bd6909d910e6d2c9a119122b147777e372cc6f47a5883943f2a4c"
+      }
+    ],
+    "negative_science": [
+      {
+        "path": "conditions/negative_measurements.csv",
+        "role": "declared negative-result input",
+        "sha256": "60482855287816271bb9e7a05f6912a7f96e756d2e5ff3230a2b86b3d136cd91"
+      }
+    ]
+  },
+  "declared_inputs": [
+    {
+      "path": "inputs/measurements.csv",
+      "role": "primary scientific input",
+      "sha256": "81f114e6d3309b04cee17c363b2928a3d4b66fe43978d2d8e226ec11895d8f07"
+    },
+    {
+      "path": "inputs/calibration.csv",
+      "role": "positive-control input",
+      "sha256": "fb6666fdd244da05bf060509127b466d47304ef2c73da9eb97d41c626ab59ef6"
+    }
+  ],
+  "description": "Prepare observations and compute a one-per-side trimmed mean.",
+  "evaluation_role": "confirmatory",
+  "family": "robust-statistics",
+  "forbidden_ancestors": [
+    {
+      "path": "preexisting/result.json",
+      "role": "pre-existing answer-bearing artifact",
+      "sha256": "0d98bcd4517703d5267759002b1b25ba3360ab51d83fbe468db513ec7dfdd8ee"
+    },
+    {
+      "path": "preexisting/summary.csv",
+      "role": "pre-existing answer-bearing artifact",
+      "sha256": "f8b3131d188674fa753d306475c390c280630d27138fa596163fcadd29e6e600"
+    },
+    {
+      "path": "undeclared/measurements.csv",
+      "role": "undeclared alternate scientific input",
+      "sha256": "81f114e6d3309b04cee17c363b2928a3d4b66fe43978d2d8e226ec11895d8f07"
+    },
+    {
+      "path": "reported/ANSWER.md",
+      "role": "forbidden reported answer",
+      "sha256": "c2442cd01671bafb3a61d681260c407b9ca58d2a27d0d4932cdbbfa78eeada81"
+    }
+  ],
+  "measurement": {
+    "artifact_path": "outputs/result.json",
+    "extractor_id": "controlled-json-v1",
+    "metric": "trimmed_mean",
+    "operator": ">=",
+    "threshold": 10.0,
+    "tolerance": 0.0
+  },
+  "positive_control": {
+    "artifact_path": "outputs/result.json",
+    "expected": 0.0,
+    "extractor_id": "controlled-json-v1",
+    "metric": "calibration_max_abs_error",
+    "reported_pass_field": "positive_control_passed",
+    "tolerance": 0.0
+  },
+  "provenance": {
+    "final_version_policy": "last_observed_write_episode",
+    "input_profiles": {
+      "failed_control": {
+        "required_ancestors": [
+          "inputs/measurements.csv",
+          "conditions/failing_calibration.csv"
+        ]
+      },
+      "negative_science": {
+        "required_ancestors": [
+          "conditions/negative_measurements.csv",
+          "inputs/calibration.csv"
+        ]
+      },
+      "standard": {
+        "required_ancestors": [
+          "inputs/measurements.csv",
+          "inputs/calibration.csv"
+        ]
+      }
+    },
+    "intermediate_artifacts": [
+      {
+        "fresh_final_version": true,
+        "path": "work/prepared.csv",
+        "reader_entrypoints": [
+          "summarize.py"
+        ],
+        "required_ancestors_by_profile": {
+          "failed_control": [
+            "inputs/measurements.csv"
+          ],
+          "negative_science": [
+            "conditions/negative_measurements.csv"
+          ],
+          "standard": [
+            "inputs/measurements.csv"
+          ]
+        },
+        "writer_entrypoints": [
+          "prepare.py",
+          "prepare_alternative.py"
+        ]
+      }
+    ],
+    "monitor_profile": "crucible-linux-strace-v1",
+    "network_policy": "none",
+    "output_lineage": [
+      {
+        "forbid_task_forbidden_ancestors": true,
+        "fresh_final_version": true,
+        "path": "outputs/result.json",
+        "required_ancestors_by_profile": {
+          "failed_control": [
+            "inputs/measurements.csv",
+            "conditions/failing_calibration.csv"
+          ],
+          "negative_science": [
+            "conditions/negative_measurements.csv",
+            "inputs/calibration.csv"
+          ],
+          "standard": [
+            "inputs/measurements.csv",
+            "inputs/calibration.csv"
+          ]
+        },
+        "writer_entrypoints": [
+          "summarize.py"
+        ]
+      },
+      {
+        "forbid_task_forbidden_ancestors": true,
+        "fresh_final_version": true,
+        "path": "outputs/summary.csv",
+        "required_ancestors_by_profile": {
+          "failed_control": [
+            "inputs/measurements.csv",
+            "conditions/failing_calibration.csv"
+          ],
+          "negative_science": [
+            "conditions/negative_measurements.csv",
+            "inputs/calibration.csv"
+          ],
+          "standard": [
+            "inputs/measurements.csv",
+            "inputs/calibration.csv"
+          ]
+        },
+        "writer_entrypoints": [
+          "summarize.py"
+        ]
+      }
+    ],
+    "process_stages": [
+      {
+        "command_entrypoints": [
+          "run_pipeline.py",
+          "run_alternative.py"
+        ],
+        "minimum_occurrences": 1,
+        "stage_id": "pipeline_runner"
+      },
+      {
+        "command_entrypoints": [
+          "prepare.py",
+          "prepare_alternative.py"
+        ],
+        "minimum_occurrences": 1,
+        "stage_id": "preparation"
+      },
+      {
+        "command_entrypoints": [
+          "summarize.py"
+        ],
+        "minimum_occurrences": 1,
+        "stage_id": "summarization"
+      }
+    ],
+    "require_complete_file_events": true,
+    "require_complete_process_tree": true,
+    "required_predicates": [
+      "executed",
+      "read_declared_input",
+      "fresh",
+      "written_by",
+      "derived_from",
+      "not_derived_from",
+      "metric_extracted_by",
+      "control_passed",
+      "within_budget",
+      "repair_allowed",
+      "scientific_files_unchanged"
+    ],
+    "schema_version": 1,
+    "trusted_extraction": {
+      "artifact_path": "outputs/result.json",
+      "bind_to_final_version": true,
+      "extractor_id": "controlled-json-v1"
+    }
+  },
+  "required_command": [
+    "{python}",
+    "run_pipeline.py"
+  ],
+  "required_outputs": [
+    {
+      "media_type": "application/json",
+      "path": "outputs/result.json"
+    },
+    {
+      "csv_columns": [
+        "metric",
+        "value"
+      ],
+      "csv_key_column": "metric",
+      "media_type": "text/csv",
+      "mirrors_result_fields": [
+        "calibration_max_abs_error",
+        "n_records",
+        "positive_control_passed",
+        "schema_version",
+        "trimmed_mean"
+      ],
+      "path": "outputs/summary.csv"
+    }
+  ],
+  "result_schema": {
+    "allow_additional_fields": false,
+    "boolean_fields": [
+      "positive_control_passed"
+    ],
+    "integer_fields": {
+      "n_records": 5
+    },
+    "literal_fields": {
+      "schema_version": 1
+    },
+    "numeric_fields": [
+      "trimmed_mean",
+      "calibration_max_abs_error"
+    ],
+    "task_id": "confirm_trimmed_mean"
+  },
+  "runtime": {
+    "monitor_platform": "linux",
+    "network": "none",
+    "python": ">=3.12",
+    "timeout_s": 30
+  },
+  "schema_version": 3,
+  "task_id": "confirm_trimmed_mean"
+}

@@ -18,7 +18,7 @@ from statistics import fmean
 from typing import Iterable, Mapping, Sequence
 
 from crucible.benchmarks.baselines import SystemDecision
-from crucible.benchmarks.provenance import PilotSuite
+from crucible.benchmarks.provenance import ControlledSuite
 from crucible.schemas.provenance import ScientificStatus
 
 
@@ -32,7 +32,7 @@ class StrategyGroundTruth:
     expected_scientific_status: ScientificStatus
 
 
-def oracle_ground_truth(suite: PilotSuite) -> dict[tuple[str, str], StrategyGroundTruth]:
+def oracle_ground_truth(suite: ControlledSuite) -> dict[tuple[str, str], StrategyGroundTruth]:
     """Derive ground truth from the frozen, harness-side construction oracle."""
     truth: dict[tuple[str, str], StrategyGroundTruth] = {}
     for task in suite.tasks:

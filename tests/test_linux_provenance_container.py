@@ -112,6 +112,8 @@ def test_matrix_launcher_help_does_not_require_docker() -> None:
     assert result.returncode == 0
     assert "--strategy" in result.stdout
     assert "--output-dir" in result.stdout
+    assert "--run-id" in result.stdout
+    assert "--supersedes-run-id" in result.stdout
 
 
 def test_container_execution_retains_raw_certificate_and_gate_decision(
@@ -204,6 +206,13 @@ def test_container_execution_retains_raw_certificate_and_gate_decision(
     assert retained_metrics.trace_size_bytes == 17
     assert retained_metrics.event_count == 0
     assert retained_metrics.gate_latency_s >= 0
+    assert retained_metrics.schema_version == 2
+    assert retained_metrics.normalized_trace_size_bytes > 0
+    assert retained_metrics.certificate_size_bytes == raw_path.stat().st_size
+    assert retained_metrics.gate_decision_size_bytes == decision_path.stat().st_size
+    assert retained_metrics.raw_trace_file_count == 1
+    assert retained_metrics.process_event_count == 0
+    assert retained_metrics.file_event_count == 0
     assert execution.metrics_path == metrics_path
     assert list(workspace_parent.iterdir()) == []
 

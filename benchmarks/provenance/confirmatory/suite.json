@@ -1,0 +1,52 @@
+{
+  "pinned_files": {
+    "tasks/confirm_auc_score/contract.json": "20bc630f272210fc2098ae5ed0ef1f55fdfe5301a90a2bc59269567f69be4f95",
+    "tasks/confirm_auc_score/initial_manifest.json": "15aec991ec064a9145b4908e7f6769fe1bc0a6da2e6400eca4f7b22505550341",
+    "tasks/confirm_geometric_growth/contract.json": "cb234c5f924829f3bbb8ba398d9653d7fbf3b63f9867be48cdb45c8968428d35",
+    "tasks/confirm_geometric_growth/initial_manifest.json": "aaba20d0a12fc9dea3b9c881d4f55fb17caa705ac6eeb34a9b2a311e0623ca67",
+    "tasks/confirm_group_gap/contract.json": "ffa28087856fa531624e9f1bd808c6a0d24875f135919684c05c50cfbbe2b9bf",
+    "tasks/confirm_group_gap/initial_manifest.json": "db3463c87c62778334f90d485e97448e48bc58dc38e725bcb3aa149ca48ef62c",
+    "tasks/confirm_harmonic_mean/contract.json": "4db2544c74a57761f8f71ac3b2a00cfda643995916c2879ceedef7304f9d0b08",
+    "tasks/confirm_harmonic_mean/initial_manifest.json": "d82533f0dffb37d75c97d85b6b6756bcde3196b36704c261fb3eabbb687aae89",
+    "tasks/confirm_normalized_gain/contract.json": "0881221e88f59a49f80ec910dfc3957ac2ba8aab053f3338b129d27be5b2f199",
+    "tasks/confirm_normalized_gain/initial_manifest.json": "650ff4480e5b1ed244c2c8dcb7f10ede8a594159ce0259982d8d35a7eac9644a",
+    "tasks/confirm_regression_slope/contract.json": "429176961aa2dfc760880c688474821e97d65191ba115b166c3ab042dd554d1c",
+    "tasks/confirm_regression_slope/initial_manifest.json": "e89257db37e77ed08ceaff22e480262b2c822b77d6714b72ce001e5377213ea5",
+    "tasks/confirm_seeded_effect/contract.json": "d0c5b9f47f22ac7f6217f2e3e5e8fde0819f96df61c8eda6c8ad58c098fc692a",
+    "tasks/confirm_seeded_effect/initial_manifest.json": "2696cd0ee2130ab7e784e1de73870a3ee8e311c3babb4b50aa4b23da6a3837dc",
+    "tasks/confirm_sql_threshold_rate/contract.json": "f994340ada9b735aeb6715c312de332b2636bab9e334e9c41b02176c6cd37a88",
+    "tasks/confirm_sql_threshold_rate/initial_manifest.json": "1fed4a291a317c896dbb198f4124de4b212a2caa1932c1c538b6662deade8169",
+    "tasks/confirm_trimmed_mean/contract.json": "148f0720f6836f82e8568d1c52bbb1546f9ee0cf29a9f87fd0569dbb4ff6a748",
+    "tasks/confirm_trimmed_mean/initial_manifest.json": "6258576569ae5b6a2125f78e6c18eb8bd54e37ace473f48c2d993c6d9669877e",
+    "tasks/confirm_weighted_median/contract.json": "5704e00c8ef4c2f8b880d494a71a44a35a868c650b4dc16e8a272bd465378236",
+    "tasks/confirm_weighted_median/initial_manifest.json": "bdb58ba4941f40af354345420bb05a2ae1bc96a251354dc05f00bf74c5192aa0",
+    "trusted/oracles.json": "ae4e11e21cf49efccd13bd7d4f58bfe5b13652a5b213072aecd8b80a48afb33d"
+  },
+  "schema_version": 2,
+  "strategy_ids": [
+    "V1",
+    "V2",
+    "V3",
+    "V4",
+    "I1",
+    "I2",
+    "I3",
+    "I4",
+    "I5",
+    "I6"
+  ],
+  "suite_id": "crucible-controlled-confirmatory-v1",
+  "suite_role": "confirmatory",
+  "task_ids": [
+    "confirm_auc_score",
+    "confirm_geometric_growth",
+    "confirm_group_gap",
+    "confirm_harmonic_mean",
+    "confirm_normalized_gain",
+    "confirm_regression_slope",
+    "confirm_seeded_effect",
+    "confirm_sql_threshold_rate",
+    "confirm_trimmed_mean",
+    "confirm_weighted_median"
+  ]
+}

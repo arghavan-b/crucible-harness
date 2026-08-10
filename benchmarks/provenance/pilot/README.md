@@ -92,12 +92,14 @@ uv run python scripts/run_linux_provenance_matrix.py \
 ```
 
 Use repeatable `--task` and `--strategy` options to capture a subset, and `--rebuild` to rebuild
-the provenance image first. Every pair gets a newly materialized workspace and exactly one
+the provenance image first. The output directory must not already exist; a protocol-authorized
+rerun uses a new directory and may name its predecessor with `--supersedes-run-id`. Every pair
+gets a newly materialized workspace and exactly one
 frozen command; no planner or repair loop runs in the container. The Docker invocation mounts only
 that workspace at `/experiment` and a staging certificate directory at `/output`, with networking
 disabled. The host resolves the image tag to an immutable digest before execution, and that digest
 is both executed and recorded in the certificate. The contract, oracle, construction label, and
-repository checkout remain on the trusted host side. Each pair retains two separate host-side
+repository checkout remain on the trusted host side. Each pair retains three separate host-side
 artifacts:
 
 - `<task>/<strategy>.raw.certificate.json` is the untouched container capture and keeps
@@ -105,7 +107,21 @@ artifacts:
 - `<task>/<strategy>.gate.json` is the typed deterministic decision evaluated from that raw
   certificate.
 - `<task>/<strategy>.metrics.json` records command runtime in seconds, total raw per-PID strace
-  size in bytes, normalized process-plus-file event count, and host-side gate latency in seconds.
+  size in bytes, normalized process-plus-file event count, normalized trace and certificate sizes,
+  per-event-class counts, and host-side gate latency in seconds.
+
+The runner also writes two experiment-level records before or during execution:
+
+- `run-manifest.json` is immutable metadata containing the suite role and hash, complete selected
+  case set, requested image, git state, host platform, and optional superseded run ID.
+- `experiment-ledger.jsonl` is an append-only, SHA-256-chained intent-to-evaluate ledger. It records
+  every case as planned before image resolution, then records image resolution, attempt start,
+  completion or failure, artifact hashes and sizes, oracle comparison, and the final suite summary.
+
+One case failure does not stop later cases. A setup failure or partial case is retained in the
+ledger, and any artifacts written before the failure remain hash-addressed there. Exit `2` means an
+execution/setup failure, exit `1` means completed captures with at least one oracle mismatch, and
+exit `0` means every selected case completed and matched.
 
 No retained artifact is overwritten. A non-admissible decision is retained as a normal matrix
 result; it does not turn an otherwise successful capture-and-gate run into a launcher failure.
@@ -114,6 +130,17 @@ evidence status, scientific status, and reason code with the frozen hidden oracl
 never mounted into the container or used by the gate logic. All selected pairs run even if a
 comparison fails; the launcher reports every mismatched field and exits `1` after the matrix is
 complete when any mismatch occurred.
+
+## Generic controlled-suite schema
+
+The loader used by the matrix is no longer tied to the two pilot task IDs. A controlled suite has
+an explicit `development` or `confirmatory` role, an integrity-pinned task list, the frozen
+V1--I6 strategy vocabulary, and one harness-side construction oracle. Generic contracts use schema
+version 3 with `evaluation_role`; the existing schema-version-2 `pilot_only` contracts and the
+schema-version-1 pilot manifest remain valid through `load_pilot_suite` without changing their
+pinned bytes. `load_controlled_suite(PATH)` accepts arbitrary task IDs and supports the registered
+`controlled-json-v1` trusted extractor while enforcing the same contract, manifest, strategy,
+lineage, and trust-zone checks.
 
 ## Comparing the provenance gate with the freshness baseline
 

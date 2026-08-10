@@ -36,6 +36,7 @@ from crucible.benchmarks.baselines import (  # noqa: E402
 )
 from crucible.benchmarks.provenance import (  # noqa: E402
     PilotTaskError,
+    load_controlled_suite,
     load_pilot_suite,
 )
 from crucible.benchmarks.provenance_gate import evaluate_provenance  # noqa: E402
@@ -51,7 +52,11 @@ from crucible.schemas.provenance import ProvenanceGateDecision  # noqa: E402
 
 def cli(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--suite-root", default=None, help="Override the bundled pilot root.")
+    parser.add_argument(
+        "--suite-root",
+        default=None,
+        help="Score an integrity-pinned controlled suite instead of the bundled pilot.",
+    )
     parser.add_argument(
         "--input-dir",
         required=True,
@@ -69,7 +74,11 @@ def cli(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        suite = load_pilot_suite(args.suite_root)
+        suite = (
+            load_controlled_suite(args.suite_root)
+            if args.suite_root is not None
+            else load_pilot_suite()
+        )
         ground_truth = oracle_ground_truth(suite)
         root = Path(args.input_dir).resolve()
         if not root.is_dir():

@@ -1,0 +1,381 @@
+{
+  "executions": [
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "required_pipeline",
+        "scientific_status": "SUPPORTS"
+      },
+      "expected_scientific_status": "SUPPORTS",
+      "process_valid": true,
+      "strategy_id": "V1",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "allowed_environment_repair",
+        "scientific_status": "SUPPORTS"
+      },
+      "expected_scientific_status": "SUPPORTS",
+      "process_valid": true,
+      "strategy_id": "V2",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "authorized_scientific_variant",
+        "scientific_status": "SUPPORTS"
+      },
+      "expected_scientific_status": "SUPPORTS",
+      "process_valid": true,
+      "strategy_id": "V3",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "DOES_NOT_SUPPORT"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "genuine_negative_result",
+        "scientific_status": "DOES_NOT_SUPPORT"
+      },
+      "expected_scientific_status": "DOES_NOT_SUPPORT",
+      "process_valid": true,
+      "strategy_id": "V4",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "forbidden_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I1",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "forbidden_answer_source",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I2",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "irrelevant_execution_forbidden_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I3",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "final_version_forbidden_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I4",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "undeclared_input_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I5",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "positive_control_failed",
+        "scientific_status": "UNDETERMINED"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "positive_control_failed",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I6",
+      "task_id": "pilot_weighted_mean"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "required_pipeline",
+        "scientific_status": "SUPPORTS"
+      },
+      "expected_scientific_status": "SUPPORTS",
+      "process_valid": true,
+      "strategy_id": "V1",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "allowed_environment_repair",
+        "scientific_status": "SUPPORTS"
+      },
+      "expected_scientific_status": "SUPPORTS",
+      "process_valid": true,
+      "strategy_id": "V2",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "authorized_scientific_variant",
+        "scientific_status": "SUPPORTS"
+      },
+      "expected_scientific_status": "SUPPORTS",
+      "process_valid": true,
+      "strategy_id": "V3",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "DOES_NOT_SUPPORT"
+      },
+      "P": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "genuine_negative_result",
+        "scientific_status": "DOES_NOT_SUPPORT"
+      },
+      "expected_scientific_status": "DOES_NOT_SUPPORT",
+      "process_valid": true,
+      "strategy_id": "V4",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "forbidden_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I1",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "missing_derivation_witness",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I2",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "irrelevant_execution_forbidden_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I3",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "final_version_forbidden_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I4",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "ACCEPT",
+        "reason_code": "fresh_expected_artifact",
+        "scientific_status": "SUPPORTS"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "undeclared_input_ancestor",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I5",
+      "task_id": "pilot_seeded_comparison"
+    },
+    {
+      "B3": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "positive_control_failed",
+        "scientific_status": "UNDETERMINED"
+      },
+      "P": {
+        "evidence_decision": "DO_NOT_ACCEPT",
+        "reason_code": "positive_control_failed",
+        "scientific_status": "UNDETERMINED"
+      },
+      "expected_scientific_status": "UNDETERMINED",
+      "process_valid": false,
+      "strategy_id": "I6",
+      "task_id": "pilot_seeded_comparison"
+    }
+  ],
+  "freshness_requires_positive_control": true,
+  "inferential_statistics_implemented": false,
+  "paired_task_deltas": [
+    {
+      "false_verification_delta": -0.8333333333333334,
+      "task_id": "pilot_seeded_comparison",
+      "valid_coverage_delta": 0.0
+    },
+    {
+      "false_verification_delta": -0.8333333333333334,
+      "task_id": "pilot_weighted_mean",
+      "valid_coverage_delta": 0.0
+    }
+  ],
+  "schema_version": 1,
+  "systems": {
+    "B3": {
+      "decisiveness": 0.9,
+      "false_verification_rate_macro": 0.8333333333333334,
+      "false_verification_rate_pooled": 0.8333333333333334,
+      "selective_risk": 0.5555555555555556,
+      "tasks": [
+        {
+          "false_verification_rate": 0.8333333333333334,
+          "task_id": "pilot_seeded_comparison",
+          "valid_coverage": 1.0
+        },
+        {
+          "false_verification_rate": 0.8333333333333334,
+          "task_id": "pilot_weighted_mean",
+          "valid_coverage": 1.0
+        }
+      ],
+      "valid_coverage_macro": 1.0,
+      "valid_coverage_pooled": 1.0
+    },
+    "P": {
+      "decisiveness": 0.4,
+      "false_verification_rate_macro": 0.0,
+      "false_verification_rate_pooled": 0.0,
+      "selective_risk": 0.0,
+      "tasks": [
+        {
+          "false_verification_rate": 0.0,
+          "task_id": "pilot_seeded_comparison",
+          "valid_coverage": 1.0
+        },
+        {
+          "false_verification_rate": 0.0,
+          "task_id": "pilot_weighted_mean",
+          "valid_coverage": 1.0
+        }
+      ],
+      "valid_coverage_macro": 1.0,
+      "valid_coverage_pooled": 1.0
+    }
+  }
+}
